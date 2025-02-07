@@ -592,10 +592,10 @@ pub const ChainedStructOut = extern struct {
 
 pub const AdapterProperties = extern struct {
     next_in_chain: ?*ChainedStructOut = null,
-    vendor_i_d: u32,
+    vendor_id: u32,
     vendor_name: [*:0]const u8,
     architecture: [*:0]const u8,
-    device_i_d: u32,
+    device_id: u32,
     name: [*:0]const u8,
     driver_description: [*:0]const u8,
     adapter_type: AdapterType,
@@ -1160,30 +1160,22 @@ pub const ComputePipelineDescriptor = extern struct {
 pub const DeviceDescriptor = extern struct {
     next_in_chain: ?*const ChainedStruct = null,
     label: ?[*:0]const u8 = null,
-    required_feature_count: usize,
-    _required_features: [*]const FeatureName,
+    required_feature_count: usize = 0,
+    required_features: ?[*]const FeatureName = null,
     required_limits: ?*const RequiredLimits = null,
-    default_queue: QueueDescriptor,
-    device_lost_callback: DeviceLostCallback,
-    device_lost_userdata: ?*anyopaque,
-
-    pub fn required_features(self: DeviceDescriptor) []const FeatureName {
-        return self.required_features[0..self.required_feature_count];
-    }
+    default_queue: QueueDescriptor = .{},
+    device_lost_callback: ?DeviceLostCallback = null,
+    device_lost_userdata: ?*anyopaque = null,
 };
 
 pub const RenderPassDescriptor = extern struct {
     next_in_chain: ?*const ChainedStruct = null,
     label: ?[*:0]const u8 = null,
     color_attachment_count: usize,
-    _color_attachments: [*]const RenderPassColorAttachment,
-    depth_stencil_attachment: ?*const RenderPassDepthStencilAttachment = null,
-    occlusion_query_set: ?QuerySet = null,
-    timestamp_writes: ?*const RenderPassTimestampWrites = null,
-
-    pub fn color_attachments(self: RenderPassDescriptor) []const RenderPassColorAttachment {
-        return self.color_attachments[0..self.color_attachment_count];
-    }
+    color_attachments: [*]const RenderPassColorAttachment,
+    depth_stencil_attachment: *const RenderPassDepthStencilAttachment,
+    occlusion_query_set: QuerySet,
+    timestamp_writes: *const RenderPassTimestampWrites,
 };
 
 pub const VertexState = extern struct {
@@ -1191,16 +1183,9 @@ pub const VertexState = extern struct {
     module: ShaderModule,
     entry_point: ?[*:0]const u8 = null,
     constant_count: usize,
-    _constants: [*]const ConstantEntry,
+    constants: [*]const ConstantEntry,
     buffer_count: usize,
-    _buffers: [*]const VertexBufferLayout,
-
-    pub fn constants(self: VertexState) []const ConstantEntry {
-        return self.constants[0..self.constant_count];
-    }
-    pub fn buffers(self: VertexState) []const VertexBufferLayout {
-        return self.buffers[0..self.buffer_count];
-    }
+    buffers: [*]const VertexBufferLayout,
 };
 
 pub const FragmentState = extern struct {
@@ -1234,7 +1219,7 @@ pub const RenderPipelineDescriptor = extern struct {
 const cdef = struct {
     pub extern fn wgpuCreateInstance(descriptor: ?*const InstanceDescriptor) Instance;
     pub extern fn wgpuGetProcAddress(device: Device, procName: [*:0]const u8) Proc;
-    pub extern fn wgpuAdapterEnumerateFeatures(adapter: Adapter, features: [*]FeatureName) usize;
+    pub extern fn wgpuAdapterEnumerateFeatures(adapter: Adapter, features: ?[*]FeatureName) usize;
     pub extern fn wgpuAdapterGetLimits(adapter: Adapter, limits: *SupportedLimits) WGPUBool;
     pub extern fn wgpuAdapterGetProperties(adapter: Adapter, properties: *AdapterProperties) void;
     pub extern fn wgpuAdapterHasFeature(adapter: Adapter, feature: FeatureName) WGPUBool;
@@ -1434,7 +1419,7 @@ const cdef = struct {
     pub extern fn wgpuComputePassEncoderEndPipelineStatisticsQuery(computePassEncoder: ComputePassEncoder) void;
 };
 
-pub fn CreateInstance(descriptor: ?InstanceDescriptor) Instance {
+pub fn createInstance(descriptor: ?InstanceDescriptor) Instance {
     return cdef.wgpuCreateInstance(if (descriptor) |d| &d else null);
 }
 
@@ -1442,7 +1427,7 @@ pub const Adapter = *opaque {
     pub fn enumerateFeatures(self: Adapter, alloc: Allocator) Allocator.Error![]FeatureName {
         const count = cdef.wgpuAdapterEnumerateFeatures(self, null);
         const features = try alloc.alloc(FeatureName, count);
-        cdef.wgpuAdapterEnumerateFeatures(self, @ptrCast(features));
+        _ = cdef.wgpuAdapterEnumerateFeatures(self, @ptrCast(features));
         return features;
     }
 
