@@ -1,8 +1,9 @@
 const std = @import("std");
 const Allocator = std.mem.Allocator;
+const wgpu = wgpu_native;
 
 // TODO: Add helper factories for chained structs
-// TODO: Add every default value possible to structs
+// TODO: Add default values
 // TODO: Add sync function wrappers
 // TODO: I think emscripten has different values for enums, maybe even different structs
 
@@ -1413,6 +1414,24 @@ const cdef = struct {
     pub extern fn wgpuTextureViewSetLabel(textureView: TextureView, label: [*:0]const u8) void;
     pub extern fn wgpuTextureViewReference(textureView: TextureView) void;
     pub extern fn wgpuTextureViewRelease(textureView: TextureView) void;
+
+    // wgpu_native
+    pub extern fn wgpuGenerateReport(instance: Instance, report: *wgpu.GlobalReport) void;
+    pub extern fn wgpuInstanceEnumerateAdapters(instance: Instance, options: ?*const wgpu.InstanceEnumerateAdapterOptions, adapters: ?[*]Adapter) usize;
+    pub extern fn wgpuQueueSubmitForIndex(queue: Queue, commandCount: usize, commands: [*]const CommandBuffer) wgpu.SubmissionIndex;
+    pub extern fn wgpuDevicePoll(device: Device, wait: WGPUBool, wrappedSubmissionIndex: ?*const wgpu.WrappedSubmissionIndex) WGPUBool;
+    pub extern fn wgpuSetLogCallback(callback: wgpu.LogCallback, userdata: ?*anyopaque) void;
+    pub extern fn wgpuSetLogLevel(level: wgpu.LogLevel) void;
+    pub extern fn wgpuGetVersion() u32;
+    pub extern fn wgpuRenderPassEncoderSetPushConstants(encoder: RenderPassEncoder, stages: ShaderStageFlags, offset: u32, sizeBytes: u32, data: [*]const u8) void;
+    pub extern fn wgpuRenderPassEncoderMultiDrawIndirect(encoder: RenderPassEncoder, buffer: Buffer, offset: u64, count: u32) void;
+    pub extern fn wgpuRenderPassEncoderMultiDrawIndexedIndirect(encoder: RenderPassEncoder, buffer: Buffer, offset: u64, count: u32) void;
+    pub extern fn wgpuRenderPassEncoderMultiDrawIndirectCount(encoder: RenderPassEncoder, buffer: Buffer, offset: u64, count_buffer: Buffer, count_buffer_offset: u64, max_count: u32) void;
+    pub extern fn wgpuRenderPassEncoderMultiDrawIndexedIndirectCount(encoder: RenderPassEncoder, buffer: Buffer, offset: u64, count_buffer: Buffer, count_buffer_offset: u64, max_count: u32) void;
+    pub extern fn wgpuRenderPassEncoderBeginPipelineStatisticsQuery(renderPassEncoder: RenderPassEncoder, querySet: QuerySet, queryIndex: u32) void;
+    pub extern fn wgpuRenderPassEncoderEndPipelineStatisticsQuery(renderPassEncoder: RenderPassEncoder) void;
+    pub extern fn wgpuComputePassEncoderBeginPipelineStatisticsQuery(computePassEncoder: ComputePassEncoder, querySet: QuerySet, queryIndex: u32) void;
+    pub extern fn wgpuComputePassEncoderEndPipelineStatisticsQuery(computePassEncoder: ComputePassEncoder) void;
 };
 
 pub fn CreateInstance(descriptor: ?InstanceDescriptor) Instance {
@@ -1532,6 +1551,10 @@ pub const ComputePassEncoder = *opaque {
     pub const setLabel = cdef.wgpuComputePassEncoderSetLabel;
     pub const reference = cdef.wgpuComputePassEncoderReference;
     pub const release = cdef.wgpuComputePassEncoderRelease;
+
+    // wgpu_native
+    pub const beginPipelineStatisticsQuery = cdef.wgpuComputePassEncoderBeginPipelineStatisticsQuery;
+    pub const endPipelineStatisticsQuery = cdef.wgpuComputePassEncoderEndPipelineStatisticsQuery;
 };
 
 pub const ComputePipeline = *opaque {
@@ -1611,6 +1634,11 @@ pub const Device = *opaque {
     pub const reference = cdef.wgpuDeviceReference;
     pub const release = cdef.wgpuDeviceRelease;
     pub const getProcAddress = cdef.wgpuGetProcAddress;
+
+    // wgpu_native
+    pub fn wgpuDevicePoll(self: Device, wait: bool, wrappedSubmissionIndex: ?wgpu.WrappedSubmissionIndex) bool {
+        return cdef.wgpuDevicePoll(self, if (wait) .true else .false, if (wrappedSubmissionIndex) |i| &i else null) == .true;
+    }
 };
 
 pub const Instance = *opaque {
@@ -1623,6 +1651,19 @@ pub const Instance = *opaque {
     pub const processEvents = cdef.wgpuInstanceProcessEvents;
     pub const reference = cdef.wgpuInstanceReference;
     pub const release = cdef.wgpuInstanceRelease;
+
+    // wgpu_native
+    pub fn generateReport(self: Instance) wgpu.GlobalReport {
+        var report: wgpu.GlobalReport = undefined;
+        cdef.wgpuGenerateReport(self, &report);
+        return report;
+    }
+    pub fn enumerateAdapters(self: Instance, alloc: Allocator, options: ?wgpu.InstanceEnumerateAdapterOptions) []Adapter {
+        const count = cdef.wgpuInstanceEnumerateAdapters(self, if (options) |o| &o else null, null);
+        const adapters = try alloc.alloc(Adapter, count);
+        _ = cdef.wgpuInstanceEnumerateAdapters(self, if (options) |o| &o else null, @ptrCast(adapters));
+        return adapters;
+    }
 };
 
 pub const PipelineLayout = *opaque {
@@ -1654,6 +1695,11 @@ pub const Queue = *opaque {
     pub const setLabel = cdef.wgpuQueueSetLabel;
     pub const reference = cdef.wgpuQueueReference;
     pub const release = cdef.wgpuQueueRelease;
+
+    // wgpu_native
+    pub fn submitForIndex(self: Queue, commands: []const CommandBuffer) wgpu.SubmissionIndex {
+        return cdef.wgpuQueueSubmitForIndex(self, commands.len, commands.ptr);
+    }
 };
 
 pub const RenderBundle = *opaque {
@@ -1714,6 +1760,17 @@ pub const RenderPassEncoder = *opaque {
     pub const setLabel = cdef.wgpuRenderPassEncoderSetLabel;
     pub const reference = cdef.wgpuRenderPassEncoderReference;
     pub const release = cdef.wgpuRenderPassEncoderRelease;
+
+    // wgpu_native
+    pub fn setPushConstants(self: RenderPassEncoder, stages: ShaderStageFlags, offset: u32, data: []const u8) void {
+        cdef.wgpuRenderPassEncoderSetPushConstants(self, stages, offset, @intCast(data.len), data.ptr);
+    }
+    pub const multiDrawIndirect = cdef.wgpuRenderPassEncoderMultiDrawIndirectCount;
+    pub const multiDrawIndexedIndirect = cdef.wgpuRenderPassEncoderMultiDrawIndexedIndirectCount;
+    pub const multiDrawIndirectCount = cdef.wgpuRenderPassEncoderMultiDrawIndirectCount;
+    pub const multiDrawIndexedIndirectCount = cdef.wgpuRenderPassEncoderMultiDrawIndexedIndirectCount;
+    pub const beginPipelineStatisticsQuery = cdef.wgpuRenderPassEncoderBeginPipelineStatisticsQuery;
+    pub const endPipelineStatisticsQuery = cdef.wgpuRenderPassEncoderEndPipelineStatisticsQuery;
 };
 
 pub const RenderPipeline = *opaque {
@@ -1924,7 +1981,7 @@ pub const wgpu_native = struct {
 
     pub const ShaderModuleGLSLDescriptor = extern struct {
         chain: ?ChainedStruct = null,
-        stage: ShaderStage,
+        stage: ShaderStageFlags,
         code: [*:0]const u8,
         define_count: u32,
         _defines: [*]ShaderDefine,
@@ -2014,4 +2071,11 @@ pub const wgpu_native = struct {
         chain: ?ChainedStruct = null,
         desired_maximum_frame_latency: WGPUBool,
     };
+
+    pub const SubmissionIndex = u64;
+    pub const LogCallback = ?*const fn (level: LogLevel, message: [*:0]const u8, userdata: ?*anyopaque) callconv(.C) void;
+
+    pub const setLogCallback = cdef.wgpuSetLogCallback;
+    pub const setLogLevel = cdef.wgpuSetLogLevel;
+    pub const getVersion = cdef.wgpuGetVersion;
 };
