@@ -703,10 +703,10 @@ pub const BufferDescriptor = extern struct {
 };
 
 pub const Color = extern struct {
-    r: f64,
-    g: f64,
-    b: f64,
-    a: f64,
+    r: f64 = 0,
+    g: f64 = 0,
+    b: f64 = 0,
+    a: f64 = 0,
 };
 
 pub const CommandBufferDescriptor = extern struct {
