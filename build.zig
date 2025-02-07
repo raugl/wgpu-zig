@@ -1,7 +1,7 @@
 const std = @import("std");
 
-// TODO: Test if `preferred_link_mode` has any effect
-// TODO: Add step for translating the C headers
+// TODO: Add option for link mode
+// TODO: Add step for generating translated C headers
 // TODO: Get rid of the external dependency `system_sdk`
 
 pub fn build(b: *std.Build) !void {
@@ -25,12 +25,10 @@ pub fn build(b: *std.Build) !void {
         const wgpu_dep_name = try std.fmt.bufPrint(&wgpu_name_buffer, "wgpu-{s}-{s}-{s}", .{ os, cpu, mode });
 
         if (b.lazyDependency(wgpu_dep_name, .{})) |dep| {
-            wgpu.addIncludePath(dep.path(""));
-
             if (target.result.os.tag != .emscripten) {
-                wgpu.addLibraryPath(dep.path(""));
-                wgpu.addLibraryPath(dep.path(""));
                 wgpu.linkSystemLibrary("wgpu_native", .{ .preferred_link_mode = .static });
+                wgpu.addIncludePath(dep.path("include")); // FIXME
+                wgpu.addLibraryPath(dep.path("lib"));
             }
         }
     }
