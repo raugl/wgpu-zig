@@ -2,6 +2,7 @@ const std = @import("std");
 const Allocator = std.mem.Allocator;
 const wgpu = wgpu_native;
 
+// TODO: Fix getter by pointer that start as undefined
 // TODO: Add helper factories for chained structs
 // TODO: Add default values
 // TODO: Add sync function wrappers
@@ -135,7 +136,7 @@ pub const CullMode = enum(u32) {
 };
 
 pub const DeviceLostReason = enum(u32) {
-    undefined = 0,
+    unknown = 1,
     destroyed,
 };
 
@@ -467,6 +468,14 @@ pub const VertexStepMode = enum(u32) {
     vertex_buffer_not_used,
 };
 
+pub const WGSLFeatureName = enum(u32) {
+    undefined = 0,
+    readonly_and_readwrite_storage_textures,
+    packed4x8integer_dot_product,
+    unrestricted_pointer_parameters,
+    pointer_composite_access,
+};
+
 pub const BufferUsageFlags = packed struct(u32) {
     pub const none = BufferUsageFlags{};
 
@@ -484,18 +493,18 @@ pub const BufferUsageFlags = packed struct(u32) {
 };
 
 pub const ColorWriteMaskFlags = packed struct(u32) {
-    pub const none = @This(){};
+    pub const none = ColorWriteMaskFlags{};
+    pub const all = ColorWriteMaskFlags{ .red = true, .green = true, .blue = true, .alpha = true };
 
     red: bool = false,
     green: bool = false,
     blue: bool = false,
     alpha: bool = false,
-    all: bool = false,
-    _padding: u27 = 0,
+    _padding: u28 = 0,
 };
 
 pub const MapModeFlags = packed struct(u32) {
-    pub const none = @This(){};
+    pub const none = MapModeFlags{};
 
     read: bool = false,
     write: bool = false,
@@ -503,7 +512,7 @@ pub const MapModeFlags = packed struct(u32) {
 };
 
 pub const ShaderStageFlags = packed struct(u32) {
-    pub const none = @This(){};
+    pub const none = ShaderStageFlags{};
 
     vertex: bool = false,
     fragment: bool = false,
@@ -522,25 +531,25 @@ pub const TextureUsageFlags = packed struct(u32) {
     _padding: u27 = 0,
 };
 
-pub const BufferMapCallback = *const fn (
+pub const BufferMapAsyncCallback = *const fn (
     status: BufferMapAsyncStatus,
     userdata: ?*anyopaque,
 ) callconv(.C) void;
 
-pub const CompilationInfoCallback = *const fn (
+pub const ShaderModuleGetCompilationInfoCallback = *const fn (
     status: CompilationInfoRequestStatus,
     compilation_info: *const CompilationInfo,
     userdata: ?*anyopaque,
 ) callconv(.C) void;
 
-pub const CreateComputePipelineAsyncCallback = *const fn (
+pub const DeviceCreateComputePipelineAsyncCallback = *const fn (
     status: CreatePipelineAsyncStatus,
     pipeline: ComputePipeline,
     messaeg: [*:0]const u8,
     userdata: ?*anyopaque,
 ) callconv(.C) void;
 
-pub const CreateRenderPipelineAsyncCallback = *const fn (
+pub const DeviceCreateRenderPipelineAsyncCallback = *const fn (
     status: CreatePipelineAsyncStatus,
     pipeline: RenderPipeline,
     message: [*:0]const u8,
@@ -561,19 +570,19 @@ pub const ErrorCallback = *const fn (
 
 pub const Proc = *const fn () callconv(.C) void;
 
-pub const QueueWorkDoneCallback = *const fn (
+pub const QueueOnSubmittedWorkDoneCallback = *const fn (
     status: QueueWorkDoneStatus,
     ?*anyopaque,
 ) callconv(.C) void;
 
-pub const RequestAdapterCallback = *const fn (
+pub const InstanceRequestAdapterCallback = *const fn (
     status: RequestAdapterStatus,
     adapter: Adapter,
     message: [*:0]const u8,
     userata: ?*anyopaque,
 ) callconv(.C) void;
 
-pub const RequestDeviceCallback = *const fn (
+pub const AdapterRequestDeviceCallback = *const fn (
     status: RequestDeviceStatus,
     device: Device,
     message: [*:0]const u8,
@@ -590,16 +599,18 @@ pub const ChainedStructOut = extern struct {
     s_type: SType,
 };
 
-pub const AdapterProperties = extern struct {
+pub const AdapterInfo = extern struct {
     next_in_chain: ?*ChainedStructOut = null,
-    vendor_id: u32,
-    vendor_name: [*:0]const u8,
+    vendor: [*:0]const u8,
     architecture: [*:0]const u8,
-    device_id: u32,
-    name: [*:0]const u8,
-    driver_description: [*:0]const u8,
-    adapter_type: AdapterType,
+    device: [*:0]const u8,
+    description: [*:0]const u8,
     backend_type: BackendType,
+    adapter_type: AdapterType,
+    vendor_id: u32,
+    device_id: u32,
+
+    pub const freeMembers = cdef.wgpuAdapterInfoFreeMembers;
 };
 
 pub const BindGroupEntry = extern struct {
@@ -873,12 +884,13 @@ pub const StorageTextureBindingLayout = extern struct {
 
 pub const SurfaceCapabilities = extern struct {
     next_in_chain: ?*ChainedStructOut = null,
+    usages: TextureUsageFlags,
     format_count: usize,
-    _formats: [*]TextureFormat,
+    _formats: [*]const TextureFormat,
     present_mode_count: usize,
-    _present_modes: [*]PresentMode,
+    _present_modes: [*]const PresentMode,
     alpha_mode_count: usize,
-    _alpha_modes: [*]CompositeAlphaMode,
+    _alpha_modes: [*]const CompositeAlphaMode,
 
     pub fn formats(self: SurfaceCapabilities) []TextureFormat {
         return self.formats_[0..self.format_count];
@@ -985,6 +997,12 @@ pub const TextureViewDescriptor = extern struct {
     aspect: TextureAspect,
 };
 
+pub const UncapturedErrorCallbackInfo = extern struct {
+    next_in_chain: *const ChainedStruct = null,
+    callback: ?ErrorCallback = null,
+    userdata: ?*anyopaque = null,
+};
+
 pub const VertexAttribute = extern struct {
     format: VertexFormat,
     offset: u64,
@@ -1077,6 +1095,7 @@ pub const ProgrammableStageDescriptor = extern struct {
 pub const RenderPassColorAttachment = extern struct {
     next_in_chain: ?*const ChainedStruct = null,
     view: ?TextureView = null,
+    depth_slice: u32,
     resolve_target: ?TextureView = null,
     load_op: LoadOp,
     store_op: StoreOp,
@@ -1166,6 +1185,7 @@ pub const DeviceDescriptor = extern struct {
     default_queue: QueueDescriptor = .{},
     device_lost_callback: ?DeviceLostCallback = null,
     device_lost_userdata: ?*anyopaque = null,
+    uncaptured_error_callback_info: UncapturedErrorCallbackInfo = .{},
 };
 
 pub const RenderPassDescriptor = extern struct {
@@ -1221,11 +1241,12 @@ const cdef = struct {
     pub extern fn wgpuGetProcAddress(device: Device, procName: [*:0]const u8) Proc;
     pub extern fn wgpuAdapterEnumerateFeatures(adapter: Adapter, features: ?[*]FeatureName) usize;
     pub extern fn wgpuAdapterGetLimits(adapter: Adapter, limits: *SupportedLimits) WGPUBool;
-    pub extern fn wgpuAdapterGetProperties(adapter: Adapter, properties: *AdapterProperties) void;
+    pub extern fn wgpuAdapterGetInfo(adapter: Adapter, info: *AdapterInfo) void;
     pub extern fn wgpuAdapterHasFeature(adapter: Adapter, feature: FeatureName) WGPUBool;
-    pub extern fn wgpuAdapterRequestDevice(adapter: Adapter, descriptor: ?*const DeviceDescriptor, callback: RequestDeviceCallback, userdata: ?*anyopaque) void;
+    pub extern fn wgpuAdapterRequestDevice(adapter: Adapter, descriptor: ?*const DeviceDescriptor, callback: AdapterRequestDeviceCallback, userdata: ?*anyopaque) void;
     pub extern fn wgpuAdapterReference(adapter: Adapter) void;
     pub extern fn wgpuAdapterRelease(adapter: Adapter) void;
+    pub extern fn wgpuAdapterInfoFreeMembers(self: AdapterInfo) void;
     pub extern fn wgpuBindGroupSetLabel(bindGroup: BindGroup, label: [*:0]const u8) void;
     pub extern fn wgpuBindGroupReference(bindGroup: BindGroup) void;
     pub extern fn wgpuBindGroupRelease(bindGroup: BindGroup) void;
@@ -1238,7 +1259,7 @@ const cdef = struct {
     pub extern fn wgpuBufferGetMappedRange(buffer: Buffer, offset: usize, size: usize) [*]u8;
     pub extern fn wgpuBufferGetSize(buffer: Buffer) u64;
     pub extern fn wgpuBufferGetUsage(buffer: Buffer) BufferUsageFlags;
-    pub extern fn wgpuBufferMapAsync(buffer: Buffer, mode: MapModeFlags, offset: usize, size: usize, callback: BufferMapCallback, userdata: ?*anyopaque) void;
+    pub extern fn wgpuBufferMapAsync(buffer: Buffer, mode: MapModeFlags, offset: usize, size: usize, callback: BufferMapAsyncCallback, userdata: ?*anyopaque) void;
     pub extern fn wgpuBufferSetLabel(buffer: Buffer, label: [*:0]const u8) void;
     pub extern fn wgpuBufferUnmap(buffer: Buffer) void;
     pub extern fn wgpuBufferReference(buffer: Buffer) void;
@@ -1282,12 +1303,12 @@ const cdef = struct {
     pub extern fn wgpuDeviceCreateBuffer(device: Device, descriptor: *const BufferDescriptor) Buffer;
     pub extern fn wgpuDeviceCreateCommandEncoder(device: Device, descriptor: ?*const CommandEncoderDescriptor) CommandEncoder;
     pub extern fn wgpuDeviceCreateComputePipeline(device: Device, descriptor: *const ComputePipelineDescriptor) ComputePipeline;
-    pub extern fn wgpuDeviceCreateComputePipelineAsync(device: Device, descriptor: *const ComputePipelineDescriptor, callback: CreateComputePipelineAsyncCallback, userdata: ?*anyopaque) void;
+    pub extern fn wgpuDeviceCreateComputePipelineAsync(device: Device, descriptor: *const ComputePipelineDescriptor, callback: DeviceCreateComputePipelineAsyncCallback, userdata: ?*anyopaque) void;
     pub extern fn wgpuDeviceCreatePipelineLayout(device: Device, descriptor: *const PipelineLayoutDescriptor) PipelineLayout;
     pub extern fn wgpuDeviceCreateQuerySet(device: Device, descriptor: *const QuerySetDescriptor) QuerySet;
     pub extern fn wgpuDeviceCreateRenderBundleEncoder(device: Device, descriptor: *const RenderBundleEncoderDescriptor) RenderBundleEncoder;
     pub extern fn wgpuDeviceCreateRenderPipeline(device: Device, descriptor: *const RenderPipelineDescriptor) RenderPipeline;
-    pub extern fn wgpuDeviceCreateRenderPipelineAsync(device: Device, descriptor: *const RenderPipelineDescriptor, callback: CreateRenderPipelineAsyncCallback, userdata: ?*anyopaque) void;
+    pub extern fn wgpuDeviceCreateRenderPipelineAsync(device: Device, descriptor: *const RenderPipelineDescriptor, callback: DeviceCreateRenderPipelineAsyncCallback, userdata: ?*anyopaque) void;
     pub extern fn wgpuDeviceCreateSampler(device: Device, descriptor: ?*const SamplerDescriptor) Sampler;
     pub extern fn wgpuDeviceCreateShaderModule(device: Device, descriptor: *const ShaderModuleDescriptor) ShaderModule;
     pub extern fn wgpuDeviceCreateTexture(device: Device, descriptor: *const TextureDescriptor) Texture;
@@ -1299,12 +1320,12 @@ const cdef = struct {
     pub extern fn wgpuDevicePopErrorScope(device: Device, callback: ErrorCallback, userdata: ?*anyopaque) void;
     pub extern fn wgpuDevicePushErrorScope(device: Device, filter: ErrorFilter) void;
     pub extern fn wgpuDeviceSetLabel(device: Device, label: [*:0]const u8) void;
-    pub extern fn wgpuDeviceSetUncapturedErrorCallback(device: Device, callback: ErrorCallback, userdata: ?*anyopaque) void;
     pub extern fn wgpuDeviceReference(device: Device) void;
     pub extern fn wgpuDeviceRelease(device: Device) void;
     pub extern fn wgpuInstanceCreateSurface(instance: Instance, descriptor: *const SurfaceDescriptor) Surface;
+    pub extern fn wgpuInstanceHasWGSLLanguageFeature(instance: Instance, feature: WGSLFeatureName) WGPUBool;
     pub extern fn wgpuInstanceProcessEvents(instance: Instance) void;
-    pub extern fn wgpuInstanceRequestAdapter(instance: Instance, options: ?*const RequestAdapterOptions, callback: RequestAdapterCallback, userdata: ?*anyopaque) void;
+    pub extern fn wgpuInstanceRequestAdapter(instance: Instance, options: ?*const RequestAdapterOptions, callback: InstanceRequestAdapterCallback, userdata: ?*anyopaque) void;
     pub extern fn wgpuInstanceReference(instance: Instance) void;
     pub extern fn wgpuInstanceRelease(instance: Instance) void;
     pub extern fn wgpuPipelineLayoutSetLabel(pipelineLayout: PipelineLayout, label: [*:0]const u8) void;
@@ -1316,7 +1337,7 @@ const cdef = struct {
     pub extern fn wgpuQuerySetSetLabel(querySet: QuerySet, label: [*:0]const u8) void;
     pub extern fn wgpuQuerySetReference(querySet: QuerySet) void;
     pub extern fn wgpuQuerySetRelease(querySet: QuerySet) void;
-    pub extern fn wgpuQueueOnSubmittedWorkDone(queue: Queue, callback: QueueWorkDoneCallback, userdata: ?*anyopaque) void;
+    pub extern fn wgpuQueueOnSubmittedWorkDone(queue: Queue, callback: QueueOnSubmittedWorkDoneCallback, userdata: ?*anyopaque) void;
     pub extern fn wgpuQueueSetLabel(queue: Queue, label: [*:0]const u8) void;
     pub extern fn wgpuQueueSubmit(queue: Queue, commandCount: usize, commands: [*]const CommandBuffer) void;
     pub extern fn wgpuQueueWriteBuffer(queue: Queue, buffer: Buffer, bufferOffset: u64, data: [*]const u8, size: usize) void;
@@ -1370,15 +1391,15 @@ const cdef = struct {
     pub extern fn wgpuSamplerSetLabel(sampler: Sampler, label: [*:0]const u8) void;
     pub extern fn wgpuSamplerReference(sampler: Sampler) void;
     pub extern fn wgpuSamplerRelease(sampler: Sampler) void;
-    pub extern fn wgpuShaderModuleGetCompilationInfo(shaderModule: ShaderModule, callback: CompilationInfoCallback, userdata: ?*anyopaque) void;
+    pub extern fn wgpuShaderModuleGetCompilationInfo(shaderModule: ShaderModule, callback: ShaderModuleGetCompilationInfoCallback, userdata: ?*anyopaque) void;
     pub extern fn wgpuShaderModuleSetLabel(shaderModule: ShaderModule, label: [*:0]const u8) void;
     pub extern fn wgpuShaderModuleReference(shaderModule: ShaderModule) void;
     pub extern fn wgpuShaderModuleRelease(shaderModule: ShaderModule) void;
     pub extern fn wgpuSurfaceConfigure(surface: Surface, config: *const SurfaceConfiguration) void;
     pub extern fn wgpuSurfaceGetCapabilities(surface: Surface, adapter: Adapter, capabilities: *SurfaceCapabilities) void;
     pub extern fn wgpuSurfaceGetCurrentTexture(surface: Surface, surfaceTexture: *SurfaceTexture) void;
-    pub extern fn wgpuSurfaceGetPreferredFormat(surface: Surface, adapter: Adapter) TextureFormat;
     pub extern fn wgpuSurfacePresent(surface: Surface) void;
+    pub extern fn wgpuSurfaceSetLabel(surface: Surface, label: [*:0]const u8) void;
     pub extern fn wgpuSurfaceUnconfigure(surface: Surface) void;
     pub extern fn wgpuSurfaceReference(surface: Surface) void;
     pub extern fn wgpuSurfaceRelease(surface: Surface) void;
@@ -1439,17 +1460,17 @@ pub const Adapter = *opaque {
         return null;
     }
 
-    pub fn getProperties(self: Adapter) AdapterProperties {
-        var properties: AdapterProperties = undefined;
-        cdef.wgpuAdapterGetProperties(self, &properties);
-        return properties;
+    pub fn getInfo(self: Adapter) AdapterInfo {
+        var info: AdapterInfo = undefined;
+        cdef.wgpuAdapterGetInfo(self, &info);
+        return info;
     }
 
     pub fn hasFeature(self: Adapter, feature: FeatureName) bool {
         return cdef.wgpuAdapterHasFeature(self, feature) == .true;
     }
 
-    pub fn requestDevice(self: Adapter, descriptor: ?DeviceDescriptor, callback: RequestDeviceCallback, userdata: ?*anyopaque) void {
+    pub fn requestDevice(self: Adapter, descriptor: ?DeviceDescriptor, callback: AdapterRequestDeviceCallback, userdata: ?*anyopaque) void {
         cdef.wgpuAdapterRequestDevice(self, if (descriptor) |d| &d else null, callback, userdata);
     }
 
@@ -1565,7 +1586,7 @@ pub const Device = *opaque {
     pub fn createComputePipeline(self: Device, descriptor: ComputePipelineDescriptor) ComputePipeline {
         return cdef.wgpuDeviceCreateComputePipeline(self, &descriptor);
     }
-    pub fn createComputePipelineAsync(self: Device, descriptor: ComputePipelineDescriptor, callback: CreateComputePipelineAsyncCallback, userdata: ?*anyopaque) void {
+    pub fn createComputePipelineAsync(self: Device, descriptor: ComputePipelineDescriptor, callback: DeviceCreateComputePipelineAsyncCallback, userdata: ?*anyopaque) void {
         return cdef.wgpuDeviceCreateComputePipelineAsync(self, &descriptor, callback, userdata);
     }
     pub fn createPipelineLayout(self: Device, descriptor: PipelineLayoutDescriptor) PipelineLayout {
@@ -1580,7 +1601,7 @@ pub const Device = *opaque {
     pub fn createRenderPipeline(self: Device, descriptor: RenderPipelineDescriptor) RenderPipeline {
         return cdef.wgpuDeviceCreateRenderPipeline(self, &descriptor);
     }
-    pub fn createRenderPipelineAsync(self: Device, descriptor: RenderPipelineDescriptor, callback: CreateRenderPipelineAsyncCallback, userdata: ?*anyopaque) void {
+    pub fn createRenderPipelineAsync(self: Device, descriptor: RenderPipelineDescriptor, callback: DeviceCreateRenderPipelineAsyncCallback, userdata: ?*anyopaque) void {
         return cdef.wgpuDeviceCreateRenderPipelineAsync(self, &descriptor, callback, userdata);
     }
     pub fn createSampler(self: Device, descriptor: ?SamplerDescriptor) Sampler {
@@ -1614,7 +1635,6 @@ pub const Device = *opaque {
     pub const getQueue = cdef.wgpuDeviceGetQueue;
     pub const popErrorScope = cdef.wgpuDevicePopErrorScope;
     pub const pushErrorScope = cdef.wgpuDevicePushErrorScope;
-    pub const setUncapturedErrorCallback = cdef.wgpuDeviceSetUncapturedErrorCallback;
     pub const setLabel = cdef.wgpuDeviceSetLabel;
     pub const reference = cdef.wgpuDeviceReference;
     pub const release = cdef.wgpuDeviceRelease;
@@ -1630,7 +1650,10 @@ pub const Instance = *opaque {
     pub fn createSurface(self: Instance, descriptor: SurfaceDescriptor) Surface {
         return cdef.wgpuInstanceCreateSurface(self, &descriptor);
     }
-    pub fn requestAdapter(self: Instance, options: ?RequestAdapterOptions, callback: RequestAdapterCallback, userdata: ?*anyopaque) void {
+    pub fn hasWGSLLanguageFeature(self: Instance, feature: WGSLFeatureName) bool {
+        return cdef.wgpuInstanceHasWGSLLanguageFeature(self, feature) == .true;
+    }
+    pub fn requestAdapter(self: Instance, options: ?RequestAdapterOptions, callback: InstanceRequestAdapterCallback, userdata: ?*anyopaque) void {
         cdef.wgpuInstanceRequestAdapter(self, if (options) |o| &o else null, callback, userdata);
     }
     pub const processEvents = cdef.wgpuInstanceProcessEvents;
@@ -1792,9 +1815,9 @@ pub const Surface = *opaque {
         cdef.wgpuSurfaceGetCurrentTexture(self, &texture);
         return texture;
     }
-    pub const getPreferredFormat = cdef.wgpuSurfaceGetPreferredFormat;
     pub const present = cdef.wgpuSurfacePresent;
     pub const unconfigure = cdef.wgpuSurfaceUnconfigure;
+    pub const setLabel = cdef.wgpuSurfaceSetLabel;
     pub const reference = cdef.wgpuSurfaceReference;
     pub const release = cdef.wgpuSurfaceRelease;
 };
