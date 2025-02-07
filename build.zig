@@ -1,12 +1,13 @@
 const std = @import("std");
 
-// TODO: Add option for link mode
 // TODO: Add step for generating translated C headers
 // TODO: Get rid of the external dependency `system_sdk`
 
 pub fn build(b: *std.Build) !void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
+
+    const shared = b.option(bool, "shared", "Link wgpu-native as a shared library (default: off)") orelse false;
 
     const wgpu = b.addModule("root", .{
         .root_source_file = b.path("src/root.zig"),
@@ -26,9 +27,10 @@ pub fn build(b: *std.Build) !void {
 
         if (b.lazyDependency(wgpu_dep_name, .{})) |dep| {
             if (target.result.os.tag != .emscripten) {
-                wgpu.linkSystemLibrary("wgpu_native", .{ .preferred_link_mode = .static });
-                wgpu.addIncludePath(dep.path("include")); // FIXME
                 wgpu.addLibraryPath(dep.path("lib"));
+                wgpu.linkSystemLibrary("wgpu_native", .{
+                    .preferred_link_mode = if (shared) .dynamic else .static,
+                });
             }
         }
     }
