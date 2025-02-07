@@ -2,7 +2,6 @@ const std = @import("std");
 const Allocator = std.mem.Allocator;
 const wgpu = wgpu_native;
 
-// TODO: Fix getter by pointer that start as undefined
 // TODO: Add helper factories for chained structs
 // TODO: Add default values
 // TODO: Add sync function wrappers
@@ -168,6 +167,42 @@ pub const FeatureName = enum(u32) {
     rg11_b10_ufloat_renderable,
     bgra8_unorm_storage,
     float32_filterable,
+
+    // wgpu-native extras (wgpu.h)
+    push_constants = 0x30001,
+    texture_adapter_specific_format_features = 0x30002,
+    multi_draw_indirect = 0x30003,
+    multi_draw_indirect_count = 0x30004,
+    vertex_writable_storage = 0x30005,
+    texture_binding_array = 0x30006,
+    sampled_texture_and_storage_buffer_array_non_uniform_indexing = 0x30007,
+    pipeline_statistics_query = 0x30008,
+    storage_resource_binding_array = 0x30009,
+    partially_bound_binding_array = 0x3000a,
+    texture_format16bit_norm = 0x3000b,
+    texture_compression_astc_hdr = 0x3000c,
+    // TODO: requires wgpu.h api change
+    // timestamp_query_inside_passes = 0x3000d,
+    mappable_primary_buffers = 0x3000e,
+    buffer_binding_array = 0x3000f,
+    uniform_buffer_and_storage_texture_array_non_uniform_indexing = 0x30010,
+    // TODO: requires wgpu.h api change
+    // address_mode_clamp_to_zero = 0x30011,
+    // address_mode_clamp_to_border = 0x30012,
+    // polygon_mode_line = 0x30013,
+    // polygon_mode_point = 0x30014,
+    // conservative_rasterization = 0x30015,
+    // clear_texture = 0x30016,
+    // spirv_shader_passthrough = 0x30017,
+    // multiview = 0x30018,
+    vertex_attribute64bit = 0x30019,
+    texture_format_nv12 = 0x3001a,
+    ray_tracing_acceleration_structure = 0x3001b,
+    ray_query = 0x3001c,
+    shader_f64 = 0x3001d,
+    shader_i16 = 0x3001e,
+    shader_primitive_index = 0x3001f,
+    shader_early_depth_test = 0x30020,
 };
 
 pub const FilterMode = enum(u32) {
@@ -221,6 +256,7 @@ pub const PrimitiveTopology = enum(u32) {
 pub const QueryType = enum(u32) {
     occlusion = 0,
     timestamp,
+    pipeline_statistics = 0x30000,
 };
 
 pub const QueueWorkDoneStatus = enum(u32) {
@@ -256,6 +292,19 @@ pub const SType = enum(u32) {
     surface_descriptor_from_android_native_window,
     surface_descriptor_from_xcb_window,
     render_pass_descriptor_max_draw_count = 15,
+
+    // Start at 0x30000 since that's allocated range for wgpu-native
+    // wgpu-native extras (wgpu.h)
+    device_extras = 0x30001,
+    required_limits_extras = 0x30002,
+    pipeline_layout_extras = 0x30003,
+    shader_module_glsl_descriptor = 0x30004,
+    supported_limits_extras = 0x30005,
+    instance_extras = 0x30006,
+    bind_group_entry_extras = 0x30007,
+    bind_group_layout_entry_extras = 0x30008,
+    query_set_descriptor_extras = 0x30009,
+    surface_configuration_extras = 0x3000a,
 };
 
 pub const SamplerBindingType = enum(u32) {
@@ -407,6 +456,15 @@ pub const TextureFormat = enum(u32) {
     astc12x10_unorm_srgb,
     astc12x12_unorm,
     astc12x12_unorm_srgb,
+
+    // wgpu-native extras (wgpu.h)
+    r16_unorm = 0x30001, // From FEATURES::TEXTURE_FORMAT_16BIT_NORM
+    r16_snorm,
+    rg16_unorm,
+    rg16_snorm,
+    rgba16_unorm,
+    rgba16_snorm,
+    nv12, // From FEATURES::TEXTURE_FORMAT_NV12
 };
 
 pub const TextureSampleType = enum(u32) {
@@ -601,14 +659,14 @@ pub const ChainedStructOut = extern struct {
 
 pub const AdapterInfo = extern struct {
     next_in_chain: ?*ChainedStructOut = null,
-    vendor: [*:0]const u8,
-    architecture: [*:0]const u8,
-    device: [*:0]const u8,
-    description: [*:0]const u8,
-    backend_type: BackendType,
-    adapter_type: AdapterType,
-    vendor_id: u32,
-    device_id: u32,
+    vendor: [*:0]const u8 = undefined,
+    architecture: [*:0]const u8 = undefined,
+    device: [*:0]const u8 = undefined,
+    description: [*:0]const u8 = undefined,
+    backend_type: BackendType = .undefined,
+    adapter_type: AdapterType = .unknown,
+    vendor_id: u32 = 0,
+    device_id: u32 = 0,
 
     pub const freeMembers = cdef.wgpuAdapterInfoFreeMembers;
 };
@@ -697,38 +755,38 @@ pub const InstanceDescriptor = extern struct {
 };
 
 pub const Limits = extern struct {
-    max_texture_dimension_1d: u32,
-    max_texture_dimension_2d: u32,
-    max_texture_dimension_3d: u32,
-    max_texture_array_layers: u32,
-    max_bind_groups: u32,
-    max_bind_groups_plus_vertex_buffers: u32,
-    max_bindings_per_bind_group: u32,
-    max_dynamic_uniform_buffers_per_pipeline_layout: u32,
-    max_dynamic_storage_buffers_per_pipeline_layout: u32,
-    max_sampled_textures_per_shader_stage: u32,
-    max_samplers_per_shader_stage: u32,
-    max_storage_buffers_per_shader_stage: u32,
-    max_storage_textures_per_shader_stage: u32,
-    max_uniform_buffers_per_shader_stage: u32,
-    max_uniform_buffer_binding_size: u64,
-    max_storage_buffer_binding_size: u64,
-    min_uniform_buffer_offset_alignment: u32,
-    min_storage_buffer_offset_alignment: u32,
-    max_vertex_buffers: u32,
-    max_buffer_size: u64,
-    max_vertex_attributes: u32,
-    max_vertex_buffer_array_stride: u32,
-    max_inter_stage_shader_components: u32,
-    max_inter_stage_shader_variables: u32,
-    max_color_attachments: u32,
-    max_color_attachment_bytes_per_sample: u32,
-    max_compute_workgroup_storage_size: u32,
-    max_compute_invocations_per_workgroup: u32,
-    max_compute_workgroup_size_x: u32,
-    max_compute_workgroup_size_y: u32,
-    max_compute_workgroup_size_z: u32,
-    max_compute_workgroups_per_dimension: u32,
+    max_texture_dimension_1d: u32 = 0,
+    max_texture_dimension_2d: u32 = 0,
+    max_texture_dimension_3d: u32 = 0,
+    max_texture_array_layers: u32 = 0,
+    max_bind_groups: u32 = 0,
+    max_bind_groups_plus_vertex_buffers: u32 = 0,
+    max_bindings_per_bind_group: u32 = 0,
+    max_dynamic_uniform_buffers_per_pipeline_layout: u32 = 0,
+    max_dynamic_storage_buffers_per_pipeline_layout: u32 = 0,
+    max_sampled_textures_per_shader_stage: u32 = 0,
+    max_samplers_per_shader_stage: u32 = 0,
+    max_storage_buffers_per_shader_stage: u32 = 0,
+    max_storage_textures_per_shader_stage: u32 = 0,
+    max_uniform_buffers_per_shader_stage: u32 = 0,
+    max_uniform_buffer_binding_size: u64 = 0,
+    max_storage_buffer_binding_size: u64 = 0,
+    min_uniform_buffer_offset_alignment: u32 = 0,
+    min_storage_buffer_offset_alignment: u32 = 0,
+    max_vertex_buffers: u32 = 0,
+    max_buffer_size: u64 = 0,
+    max_vertex_attributes: u32 = 0,
+    max_vertex_buffer_array_stride: u32 = 0,
+    max_inter_stage_shader_components: u32 = 0,
+    max_inter_stage_shader_variables: u32 = 0,
+    max_color_attachments: u32 = 0,
+    max_color_attachment_bytes_per_sample: u32 = 0,
+    max_compute_workgroup_storage_size: u32 = 0,
+    max_compute_invocations_per_workgroup: u32 = 0,
+    max_compute_workgroup_size_x: u32 = 0,
+    max_compute_workgroup_size_y: u32 = 0,
+    max_compute_workgroup_size_z: u32 = 0,
+    max_compute_workgroups_per_dimension: u32 = 0,
 };
 
 pub const MultisampleState = extern struct {
@@ -747,8 +805,8 @@ pub const Origin3D = extern struct {
 pub const PipelineLayoutDescriptor = extern struct {
     next_in_chain: ?*const ChainedStruct = null,
     label: ?[*:0]const u8 = null,
-    bind_group_layout_count: usize,
-    bind_group_layouts: [*]const BindGroupLayout,
+    bind_group_layout_count: usize = 0,
+    bind_group_layouts: [*]const BindGroupLayout = undefined,
 };
 
 pub const PrimitiveDepthClipControl = extern struct {
@@ -784,8 +842,8 @@ pub const RenderBundleDescriptor = extern struct {
 pub const RenderBundleEncoderDescriptor = extern struct {
     next_in_chain: ?*const ChainedStruct = null,
     label: ?[*:0]const u8 = null,
-    color_format_count: usize,
-    color_formats: [*]const TextureFormat,
+    color_format_count: usize = 0,
+    color_formats: [*]const TextureFormat = undefined,
     depth_stencil_format: TextureFormat,
     sample_count: u32,
     depth_read_only: WGPUBool,
@@ -818,9 +876,9 @@ pub const RenderPassTimestampWrites = extern struct {
 pub const RequestAdapterOptions = extern struct {
     next_in_chain: ?*const ChainedStruct = null,
     compatible_surface: ?Surface = null,
-    power_preference: PowerPreference,
-    backend_type: BackendType,
-    force_fallback_adapter: WGPUBool,
+    power_preference: PowerPreference = .undefined,
+    backend_type: BackendType = .undefined,
+    force_fallback_adapter: WGPUBool = .false,
 };
 
 pub const SamplerBindingLayout = extern struct {
@@ -876,13 +934,13 @@ pub const StorageTextureBindingLayout = extern struct {
 
 pub const SurfaceCapabilities = extern struct {
     next_in_chain: ?*ChainedStructOut = null,
-    usages: TextureUsageFlags,
-    format_count: usize,
-    _formats: [*]const TextureFormat,
-    present_mode_count: usize,
-    _present_modes: [*]const PresentMode,
-    alpha_mode_count: usize,
-    _alpha_modes: [*]const CompositeAlphaMode,
+    usages: TextureUsageFlags = TextureUsageFlags.none,
+    format_count: usize = 0,
+    _formats: [*]const TextureFormat = undefined,
+    present_mode_count: usize = 0,
+    _present_modes: [*]const PresentMode = undefined,
+    alpha_mode_count: usize = 0,
+    _alpha_modes: [*]const CompositeAlphaMode = undefined,
 
     pub fn formats(self: SurfaceCapabilities) []TextureFormat {
         return self.formats_[0..self.format_count];
@@ -901,8 +959,8 @@ pub const SurfaceConfiguration = extern struct {
     device: Device,
     format: TextureFormat,
     usage: TextureUsageFlags,
-    view_format_count: usize,
-    view_formats: [*]const TextureFormat,
+    view_format_count: usize = 0,
+    view_formats: [*]const TextureFormat = undefined,
     alpha_mode: CompositeAlphaMode,
     width: u32,
     height: u32,
@@ -954,9 +1012,9 @@ pub const SurfaceDescriptorFromXlibWindow = extern struct {
 };
 
 pub const SurfaceTexture = extern struct {
-    texture: Texture,
-    suboptimal: WGPUBool,
-    status: SurfaceGetCurrentTextureStatus,
+    texture: Texture = undefined,
+    suboptimal: WGPUBool = .false,
+    status: SurfaceGetCurrentTextureStatus = .success,
 };
 
 pub const TextureBindingLayout = extern struct {
@@ -986,10 +1044,19 @@ pub const TextureViewDescriptor = extern struct {
 };
 
 pub const UncapturedErrorCallbackInfo = extern struct {
-    next_in_chain: *const ChainedStruct = null,
-    callback: ?ErrorCallback = null,
+    next_in_chain: ?*const ChainedStruct = null,
+    callback: ErrorCallback = &defaultErrorCallback,
     userdata: ?*anyopaque = null,
 };
+
+fn defaultErrorCallback(
+    type_: ErrorType,
+    message: [*:0]const u8,
+    userdata: ?*anyopaque,
+) callconv(.C) void {
+    std.log.err("WebGPU error: {s} {s}", .{ @tagName(type_), message });
+    _ = userdata;
+}
 
 pub const VertexAttribute = extern struct {
     format: VertexFormat,
@@ -1001,8 +1068,8 @@ pub const BindGroupDescriptor = extern struct {
     next_in_chain: ?*const ChainedStruct = null,
     label: ?[*:0]const u8 = null,
     layout: BindGroupLayout,
-    entry_count: usize,
-    entries: [*]const BindGroupEntry,
+    entry_count: usize = 0,
+    entries: [*]const BindGroupEntry = undefined,
 };
 
 pub const BindGroupLayoutEntry = extern struct {
@@ -1022,8 +1089,8 @@ pub const BlendState = extern struct {
 
 pub const CompilationInfo = extern struct {
     next_in_chain: ?*const ChainedStruct = null,
-    message_count: usize,
-    _messages: [*]const CompilationMessage,
+    message_count: usize = 0,
+    _messages: [*]const CompilationMessage = undefined,
 
     pub fn messages(self: CompilationInfo) []const CompilationMessage {
         return self.messages[0..self.message_count];
@@ -1068,8 +1135,8 @@ pub const ProgrammableStageDescriptor = extern struct {
     next_in_chain: ?*const ChainedStruct = null,
     module: ShaderModule,
     entry_point: ?[*:0]const u8 = null,
-    constant_count: usize,
-    constants: [*]const ConstantEntry,
+    constant_count: usize = 0,
+    constants: [*]const ConstantEntry = undefined,
 };
 
 pub const RenderPassColorAttachment = extern struct {
@@ -1090,13 +1157,13 @@ pub const RequiredLimits = extern struct {
 pub const ShaderModuleDescriptor = extern struct {
     next_in_chain: ?*const ChainedStruct = null,
     label: ?[*:0]const u8 = null,
-    hint_count: usize,
-    hints: [*]const ShaderModuleCompilationHint,
+    hint_count: usize = 0,
+    hints: [*]const ShaderModuleCompilationHint = undefined,
 };
 
 pub const SupportedLimits = extern struct {
     next_in_chain: ?*ChainedStructOut = null,
-    limits: Limits,
+    limits: Limits = .{},
 };
 
 pub const TextureDescriptor = extern struct {
@@ -1108,22 +1175,22 @@ pub const TextureDescriptor = extern struct {
     format: TextureFormat,
     mip_level_count: u32,
     sample_count: u32,
-    view_format_count: usize,
-    view_formats: [*]const TextureFormat,
+    view_format_count: usize = 0,
+    view_formats: [*]const TextureFormat = undefined,
 };
 
 pub const VertexBufferLayout = extern struct {
     array_stride: u64,
     step_mode: VertexStepMode,
-    attribute_count: usize,
-    attributes: [*]const VertexAttribute,
+    attribute_count: usize = 0,
+    attributes: [*]const VertexAttribute = undefined,
 };
 
 pub const BindGroupLayoutDescriptor = extern struct {
     next_in_chain: ?*const ChainedStruct = null,
     label: ?[*:0]const u8 = null,
-    entry_count: usize,
-    entries: [*]const BindGroupLayoutEntry,
+    entry_count: usize = 0,
+    entries: [*]const BindGroupLayoutEntry = undefined,
 };
 
 pub const ColorTargetState = extern struct {
@@ -1144,19 +1211,28 @@ pub const DeviceDescriptor = extern struct {
     next_in_chain: ?*const ChainedStruct = null,
     label: ?[*:0]const u8 = null,
     required_feature_count: usize = 0,
-    required_features: ?[*]const FeatureName = null,
+    required_features: [*]const FeatureName = undefined,
     required_limits: ?*const RequiredLimits = null,
     default_queue: QueueDescriptor = .{},
-    device_lost_callback: ?DeviceLostCallback = null,
+    device_lost_callback: DeviceLostCallback = &defaultDeviceLostCallback,
     device_lost_userdata: ?*anyopaque = null,
     uncaptured_error_callback_info: UncapturedErrorCallbackInfo = .{},
 };
 
+fn defaultDeviceLostCallback(
+    reason: DeviceLostReason,
+    message: [*:0]const u8,
+    userdata: ?*anyopaque,
+) callconv(.C) void {
+    _ = userdata;
+    std.log.warn("WebGPU device lost: {s} {s}", .{ @tagName(reason), message });
+}
+
 pub const RenderPassDescriptor = extern struct {
     next_in_chain: ?*const ChainedStruct = null,
     label: ?[*:0]const u8 = null,
-    color_attachment_count: usize,
-    color_attachments: [*]const RenderPassColorAttachment,
+    color_attachment_count: usize = 0,
+    color_attachments: [*]const RenderPassColorAttachment = undefined,
     depth_stencil_attachment: *const RenderPassDepthStencilAttachment,
     occlusion_query_set: QuerySet,
     timestamp_writes: *const RenderPassTimestampWrites,
@@ -1166,20 +1242,20 @@ pub const VertexState = extern struct {
     next_in_chain: ?*const ChainedStruct = null,
     module: ShaderModule,
     entry_point: ?[*:0]const u8 = null,
-    constant_count: usize,
-    constants: [*]const ConstantEntry,
-    buffer_count: usize,
-    buffers: [*]const VertexBufferLayout,
+    constant_count: usize = 0,
+    constants: [*]const ConstantEntry = undefined,
+    buffer_count: usize = 0,
+    buffers: [*]const VertexBufferLayout = undefined,
 };
 
 pub const FragmentState = extern struct {
     next_in_chain: ?*const ChainedStruct = null,
     module: ShaderModule,
     entry_point: ?[*:0]const u8 = null,
-    constant_count: usize,
-    constants: [*]const ConstantEntry,
-    target_count: usize,
-    targets: [*]const ColorTargetState,
+    constant_count: usize = 0,
+    constants: [*]const ConstantEntry = undefined,
+    target_count: usize = 0,
+    targets: [*]const ColorTargetState = undefined,
 };
 
 pub const RenderPipelineDescriptor = extern struct {
@@ -1378,7 +1454,7 @@ const cdef = struct {
     pub extern fn wgpuTextureViewReference(textureView: TextureView) void;
     pub extern fn wgpuTextureViewRelease(textureView: TextureView) void;
 
-    // wgpu_native
+    // wgpu-native extras (wgpu.h)
     pub extern fn wgpuGenerateReport(instance: Instance, report: *wgpu.GlobalReport) void;
     pub extern fn wgpuInstanceEnumerateAdapters(instance: Instance, options: ?*const wgpu.InstanceEnumerateAdapterOptions, adapters: ?[*]Adapter) usize;
     pub extern fn wgpuQueueSubmitForIndex(queue: Queue, commandCount: usize, commands: [*]const CommandBuffer) wgpu.SubmissionIndex;
@@ -1410,7 +1486,7 @@ pub const Adapter = *opaque {
     }
 
     pub fn getLimits(self: Adapter) ?SupportedLimits {
-        var limits: SupportedLimits = undefined;
+        var limits = SupportedLimits{};
         if (cdef.wgpuAdapterGetLimits(self, &limits) == .true) {
             return limits;
         }
@@ -1418,7 +1494,7 @@ pub const Adapter = *opaque {
     }
 
     pub fn getInfo(self: Adapter) AdapterInfo {
-        var info: AdapterInfo = undefined;
+        var info = AdapterInfo{};
         cdef.wgpuAdapterGetInfo(self, &info);
         return info;
     }
@@ -1515,7 +1591,7 @@ pub const ComputePassEncoder = *opaque {
     pub const reference = cdef.wgpuComputePassEncoderReference;
     pub const release = cdef.wgpuComputePassEncoderRelease;
 
-    // wgpu_native
+    // wgpu-native extras (wgpu.h)
     pub const beginPipelineStatisticsQuery = cdef.wgpuComputePassEncoderBeginPipelineStatisticsQuery;
     pub const endPipelineStatisticsQuery = cdef.wgpuComputePassEncoderEndPipelineStatisticsQuery;
 };
@@ -1580,7 +1656,7 @@ pub const Device = *opaque {
         return features;
     }
     pub fn getLimits(self: Device) ?SupportedLimits {
-        var limits: SupportedLimits = undefined;
+        var limits = SupportedLimits{};
         if (cdef.wgpuDeviceGetLimits(self, &limits) == .true) {
             return limits;
         }
@@ -1597,7 +1673,7 @@ pub const Device = *opaque {
     pub const release = cdef.wgpuDeviceRelease;
     pub const getProcAddress = cdef.wgpuGetProcAddress;
 
-    // wgpu_native
+    // wgpu-native extras (wgpu.h)
     pub fn wgpuDevicePoll(self: Device, wait: bool, wrappedSubmissionIndex: ?wgpu.WrappedSubmissionIndex) bool {
         return cdef.wgpuDevicePoll(self, if (wait) .true else .false, if (wrappedSubmissionIndex) |i| &i else null) == .true;
     }
@@ -1617,9 +1693,9 @@ pub const Instance = *opaque {
     pub const reference = cdef.wgpuInstanceReference;
     pub const release = cdef.wgpuInstanceRelease;
 
-    // wgpu_native
+    // wgpu-native extras (wgpu.h)
     pub fn generateReport(self: Instance) wgpu.GlobalReport {
-        var report: wgpu.GlobalReport = undefined;
+        var report = wgpu.GlobalReport{};
         cdef.wgpuGenerateReport(self, &report);
         return report;
     }
@@ -1661,7 +1737,7 @@ pub const Queue = *opaque {
     pub const reference = cdef.wgpuQueueReference;
     pub const release = cdef.wgpuQueueRelease;
 
-    // wgpu_native
+    // wgpu-native extras (wgpu.h)
     pub fn submitForIndex(self: Queue, commands: []const CommandBuffer) wgpu.SubmissionIndex {
         return cdef.wgpuQueueSubmitForIndex(self, commands.len, commands.ptr);
     }
@@ -1726,7 +1802,7 @@ pub const RenderPassEncoder = *opaque {
     pub const reference = cdef.wgpuRenderPassEncoderReference;
     pub const release = cdef.wgpuRenderPassEncoderRelease;
 
-    // wgpu_native
+    // wgpu-native extras (wgpu.h)
     pub fn setPushConstants(self: RenderPassEncoder, stages: ShaderStageFlags, offset: u32, data: []const u8) void {
         cdef.wgpuRenderPassEncoderSetPushConstants(self, stages, offset, @intCast(data.len), data.ptr);
     }
@@ -1763,12 +1839,12 @@ pub const Surface = *opaque {
         cdef.wgpuSurfaceConfigure(self, &config);
     }
     pub fn getCapabilities(self: Surface, adapter: Adapter) SurfaceCapabilities {
-        var capabilities: SurfaceCapabilities = undefined;
+        var capabilities = SurfaceCapabilities{};
         cdef.wgpuSurfaceGetCapabilities(self, adapter, &capabilities);
         return capabilities;
     }
     pub fn getCurrentTexture(self: Surface) SurfaceTexture {
-        var texture: SurfaceTexture = undefined;
+        var texture = SurfaceTexture{};
         cdef.wgpuSurfaceGetCurrentTexture(self, &texture);
         return texture;
     }
@@ -1804,57 +1880,6 @@ pub const TextureView = *opaque {
 };
 
 pub const wgpu_native = struct {
-    pub const NativeSType = enum(u32) {
-        // Start at 196608 since that's allocated range for wgpu-native
-        device_extras = 196609,
-        required_limits_extras,
-        pipeline_layout_extras,
-        shadermodule_glsl_descriptor,
-        supported_limits_extras,
-        instance_extras,
-        bind_group_entry_extras,
-        bind_group_layout_entry_extras,
-        query_set_descriptor_extras,
-        surface_configuration_extras,
-    };
-
-    pub const NativeFeature = enum(u32) {
-        push_constants = 0x00030001,
-        texture_adapter_specific_format_features = 0x00030002,
-        multi_draw_indirect = 0x00030003,
-        multi_draw_indirect_count = 0x00030004,
-        vertex_writable_storage = 0x00030005,
-        texture_binding_array = 0x00030006,
-        sampled_texture_and_storage_buffer_array_non_uniform_indexing = 0x00030007,
-        pipeline_statistics_query = 0x00030008,
-        storage_resource_binding_array = 0x00030009,
-        partially_bound_binding_array = 0x0003000a,
-        texture_format16bit_norm = 0x0003000b,
-        texture_compression_astc_hdr = 0x0003000c,
-        // TODO: requires wgpu.h api change
-        // timestamp_query_inside_passes = 0x0003000d,
-        mappable_primary_buffers = 0x0003000e,
-        buffer_binding_array = 0x0003000f,
-        uniform_buffer_and_storage_texture_array_non_uniform_indexing = 0x00030010,
-        // TODO: requires wgpu.h api change
-        // address_mode_clamp_to_zero = 0x00030011,
-        // address_mode_clamp_to_border = 0x00030012,
-        // polygon_mode_line = 0x00030013,
-        // polygon_mode_point = 0x00030014,
-        // conservative_rasterization = 0x00030015,
-        // clear_texture = 0x00030016,
-        // spirv_shader_passthrough = 0x00030017,
-        // multiview = 0x00030018,
-        vertex_attribute64bit = 0x00030019,
-        texture_format_nv12 = 0x0003001a,
-        ray_tracing_acceleration_structure = 0x0003001b,
-        ray_query = 0x0003001c,
-        shader_f64 = 0x0003001d,
-        shader_i16 = 0x0003001e,
-        shader_primitive_index = 0x0003001f,
-        shader_early_depth_test = 0x00030020,
-    };
-
     pub const LogLevel = enum(u32) {
         off = 0,
         @"error",
@@ -1862,6 +1887,27 @@ pub const wgpu_native = struct {
         info,
         debug,
         trace,
+    };
+
+    pub const Dx12Compiler = enum(u32) {
+        undefined = 0,
+        fxc,
+        dxc,
+    };
+
+    pub const Gles3MinorVersion = enum(u32) {
+        automatic = 0,
+        version0,
+        version1,
+        version2,
+    };
+
+    pub const PipelineStatisticName = enum(u32) {
+        vertex_shader_invocations = 0,
+        clipper_invocations,
+        clipper_primitives_out,
+        fragment_shader_invocations,
+        compute_shader_invocations,
     };
 
     pub const InstanceBackendFlags = packed struct(u32) {
@@ -1887,31 +1933,6 @@ pub const wgpu_native = struct {
         _padding: u29 = 0,
     };
 
-    pub const Dx12Compiler = enum(u32) {
-        undefined = 0,
-        fxc,
-        dxc,
-    };
-
-    pub const Gles3MinorVersion = enum(u32) {
-        automatic = 0,
-        version0,
-        version1,
-        version2,
-    };
-
-    pub const PipelineStatisticName = enum(u32) {
-        vertex_shader_invocations = 0,
-        clipper_invocations,
-        clipper_primitives_out,
-        fragment_shader_invocations,
-        compute_shader_invocations,
-    };
-
-    pub const NativeQueryType = enum(u32) {
-        pipeline_statistics = 196608,
-    };
-
     pub const InstanceExtras = extern struct {
         chain: ?ChainedStruct = null,
         backends: InstanceBackendFlags,
@@ -1928,24 +1949,24 @@ pub const wgpu_native = struct {
     };
 
     pub const NativeLimits = extern struct {
-        max_push_constant_size: u32,
-        max_non_sampler_bindings: u32,
+        max_push_constant_size: u32 = 0,
+        max_non_sampler_bindings: u32 = 0,
     };
 
     pub const RequiredLimitsExtras = extern struct {
         chain: ?ChainedStruct = null,
-        limits: NativeLimits,
+        limits: NativeLimits = .{},
     };
 
     pub const SupportedLimitsExtras = extern struct {
         chain: ?ChainedStructOut = null,
-        limits: NativeLimits,
+        limits: NativeLimits = .{},
     };
 
     pub const PushConstantRange = extern struct {
-        stages: ShaderStageFlags,
-        start: u32,
-        end: u32,
+        stages: ShaderStageFlags = ShaderStageFlags.none,
+        start: u32 = 0,
+        end: u32 = 0,
     };
 
     pub const PipelineLayoutExtras = extern struct {
@@ -1973,44 +1994,44 @@ pub const wgpu_native = struct {
     };
 
     pub const RegistryReport = extern struct {
-        num_allocated: usize,
-        num_kept_from_user: usize,
-        num_released_from_user: usize,
-        num_error: usize,
-        element_size: usize,
+        num_allocated: usize = 0,
+        num_kept_from_user: usize = 0,
+        num_released_from_user: usize = 0,
+        num_error: usize = 0,
+        element_size: usize = 0,
     };
 
     pub const HubReport = extern struct {
-        adapters: RegistryReport,
-        devices: RegistryReport,
-        queues: RegistryReport,
-        pipeline_layouts: RegistryReport,
-        shader_modules: RegistryReport,
-        bind_group_layouts: RegistryReport,
-        bind_groups: RegistryReport,
-        command_buffers: RegistryReport,
-        render_bundles: RegistryReport,
-        render_pipelines: RegistryReport,
-        compute_pipelines: RegistryReport,
-        query_sets: RegistryReport,
-        buffers: RegistryReport,
-        textures: RegistryReport,
-        texture_views: RegistryReport,
-        samplers: RegistryReport,
+        adapters: RegistryReport = .{},
+        devices: RegistryReport = .{},
+        queues: RegistryReport = .{},
+        pipeline_layouts: RegistryReport = .{},
+        shader_modules: RegistryReport = .{},
+        bind_group_layouts: RegistryReport = .{},
+        bind_groups: RegistryReport = .{},
+        command_buffers: RegistryReport = .{},
+        render_bundles: RegistryReport = .{},
+        render_pipelines: RegistryReport = .{},
+        compute_pipelines: RegistryReport = .{},
+        query_sets: RegistryReport = .{},
+        buffers: RegistryReport = .{},
+        textures: RegistryReport = .{},
+        texture_views: RegistryReport = .{},
+        samplers: RegistryReport = .{},
     };
 
     pub const GlobalReport = extern struct {
-        surfaces: RegistryReport,
-        backend_type: BackendType,
-        vulkan: HubReport,
-        metal: HubReport,
-        dx12: HubReport,
-        gl: HubReport,
+        surfaces: RegistryReport = .{},
+        backend_type: BackendType = .undefined,
+        vulkan: HubReport = .{},
+        metal: HubReport = .{},
+        dx12: HubReport = .{},
+        gl: HubReport = .{},
     };
 
     pub const InstanceEnumerateAdapterOptions = extern struct {
         next_in_chain: ?*const ChainedStruct = null,
-        backends: InstanceBackendFlags,
+        backends: InstanceBackendFlags = InstanceBackendFlags.all,
     };
 
     pub const BindGroupEntryExtras = extern struct {
@@ -2037,18 +2058,6 @@ pub const wgpu_native = struct {
     pub const SurfaceConfigurationExtras = extern struct {
         chain: ?ChainedStruct = null,
         desired_maximum_frame_latency: u32,
-    };
-
-    pub const NativeTextureFormat = enum(u32) {
-        // From FEATURES::TEXTURE_FORMAT_16BIT_NORM
-        r16_unorm = 196609,
-        r16_snorm,
-        rg16_unorm,
-        rg16_snorm,
-        rgba16_unorm,
-        rgba16_snorm,
-        // From FEATURES::TEXTURE_FORMAT_NV12
-        nv12,
     };
 
     pub const SubmissionIndex = u64;
