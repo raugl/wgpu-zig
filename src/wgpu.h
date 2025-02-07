@@ -29,6 +29,30 @@ typedef enum WGPUNativeFeature {
     WGPUNativeFeature_PipelineStatisticsQuery = 0x00030008,
     WGPUNativeFeature_StorageResourceBindingArray = 0x00030009,
     WGPUNativeFeature_PartiallyBoundBindingArray = 0x0003000A,
+    WGPUNativeFeature_TextureFormat16bitNorm = 0x0003000B,
+    WGPUNativeFeature_TextureCompressionAstcHdr = 0x0003000C,
+    // TODO: requires wgpu.h api change
+    // WGPUNativeFeature_TimestampQueryInsidePasses = 0x0003000D,
+    WGPUNativeFeature_MappablePrimaryBuffers = 0x0003000E,
+    WGPUNativeFeature_BufferBindingArray = 0x0003000F,
+    WGPUNativeFeature_UniformBufferAndStorageTextureArrayNonUniformIndexing = 0x00030010,
+    // TODO: requires wgpu.h api change
+    // WGPUNativeFeature_AddressModeClampToZero = 0x00030011,
+    // WGPUNativeFeature_AddressModeClampToBorder = 0x00030012,
+    // WGPUNativeFeature_PolygonModeLine = 0x00030013,
+    // WGPUNativeFeature_PolygonModePoint = 0x00030014,
+    // WGPUNativeFeature_ConservativeRasterization = 0x00030015,
+    // WGPUNativeFeature_ClearTexture = 0x00030016,
+    // WGPUNativeFeature_SpirvShaderPassthrough = 0x00030017,
+    // WGPUNativeFeature_Multiview = 0x00030018,
+    WGPUNativeFeature_VertexAttribute64bit = 0x00030019,
+    WGPUNativeFeature_TextureFormatNv12 = 0x0003001A,
+    WGPUNativeFeature_RayTracingAccelerationStructure = 0x0003001B,
+    WGPUNativeFeature_RayQuery = 0x0003001C,
+    WGPUNativeFeature_ShaderF64 = 0x0003001D,
+    WGPUNativeFeature_ShaderI16 = 0x0003001E,
+    WGPUNativeFeature_ShaderPrimitiveIndex = 0x0003001F,
+    WGPUNativeFeature_ShaderEarlyDepthTest = 0x00030020,
     WGPUNativeFeature_Force32 = 0x7FFFFFFF
 } WGPUNativeFeature;
 
@@ -44,25 +68,25 @@ typedef enum WGPULogLevel {
 
 typedef enum WGPUInstanceBackend {
     WGPUInstanceBackend_All = 0x00000000,
-    WGPUInstanceBackend_Vulkan = 0x00000001,
-    WGPUInstanceBackend_GL = 0x00000002,
-    WGPUInstanceBackend_Metal = 0x00000004,
-    WGPUInstanceBackend_DX12 = 0x00000008,
-    WGPUInstanceBackend_DX11 = 0x00000010,
-    WGPUInstanceBackend_BrowserWebGPU = 0x00000020,
-    // WGPUInstanceBackend_Primary = WGPUInstanceBackend_Vulkan | WGPUInstanceBackend_Metal | WGPUInstanceBackend_DX12 | WGPUInstanceBackend_BrowserWebGPU,
-    WGPUInstanceBackend_Primary = 0x0000002d,
-    // WGPUInstanceBackend_Secondary = WGPUInstanceBackend_GL | WGPUInstanceBackend_DX11,
-    WGPUInstanceBackend_Secondary = 0x00000012,
+    WGPUInstanceBackend_Vulkan = 1 << 0,
+    WGPUInstanceBackend_GL = 1 << 1,
+    WGPUInstanceBackend_Metal = 1 << 2,
+    WGPUInstanceBackend_DX12 = 1 << 3,
+    WGPUInstanceBackend_DX11 = 1 << 4,
+    WGPUInstanceBackend_BrowserWebGPU = 1 << 5,
+    WGPUInstanceBackend_Primary = WGPUInstanceBackend_Vulkan | WGPUInstanceBackend_Metal |
+        WGPUInstanceBackend_DX12 |
+        WGPUInstanceBackend_BrowserWebGPU,
+    WGPUInstanceBackend_Secondary = WGPUInstanceBackend_GL | WGPUInstanceBackend_DX11,
     WGPUInstanceBackend_Force32 = 0x7FFFFFFF
 } WGPUInstanceBackend;
 typedef WGPUFlags WGPUInstanceBackendFlags;
 
 typedef enum WGPUInstanceFlag {
     WGPUInstanceFlag_Default = 0x00000000,
-    WGPUInstanceFlag_Debug = 0x00000001,
-    WGPUInstanceFlag_Validation = 0x00000002,
-    WGPUInstanceFlag_DiscardHalLabels = 0x00000004,
+    WGPUInstanceFlag_Debug = 1 << 0,
+    WGPUInstanceFlag_Validation = 1 << 1,
+    WGPUInstanceFlag_DiscardHalLabels = 1 << 2,
     WGPUInstanceFlag_Force32 = 0x7FFFFFFF
 } WGPUInstanceFlag;
 typedef WGPUFlags WGPUInstanceFlags;
@@ -222,10 +246,22 @@ typedef struct WGPUQuerySetDescriptorExtras {
 
 typedef struct WGPUSurfaceConfigurationExtras {
     WGPUChainedStruct chain;
-    WGPUBool desiredMaximumFrameLatency;
+    uint32_t desiredMaximumFrameLatency;
 } WGPUSurfaceConfigurationExtras WGPU_STRUCTURE_ATTRIBUTE;
 
 typedef void (*WGPULogCallback)(WGPULogLevel level, char const * message, void * userdata);
+
+typedef enum WGPUNativeTextureFormat {
+    // From Features::TEXTURE_FORMAT_16BIT_NORM
+    WGPUNativeTextureFormat_R16Unorm = 0x00030001,
+    WGPUNativeTextureFormat_R16Snorm = 0x00030002,
+    WGPUNativeTextureFormat_Rg16Unorm = 0x00030003,
+    WGPUNativeTextureFormat_Rg16Snorm = 0x00030004,
+    WGPUNativeTextureFormat_Rgba16Unorm = 0x00030005,
+    WGPUNativeTextureFormat_Rgba16Snorm = 0x00030006,
+    // From Features::TEXTURE_FORMAT_NV12
+    WGPUNativeTextureFormat_NV12 = 0x00030007,
+} WGPUNativeTextureFormat;
 
 #ifdef __cplusplus
 extern "C" {

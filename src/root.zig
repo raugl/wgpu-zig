@@ -1862,16 +1862,40 @@ pub const wgpu_native = struct {
     };
 
     pub const NativeFeature = enum(u32) {
-        push_constants = 196609,
-        texture_adapter_specific_format_features,
-        multi_draw_indirect,
-        multi_draw_indirect_count,
-        vertex_writable_storage,
-        texture_binding_array,
-        sampled_texture_and_storage_buffer_array_non_uniform_indexing,
-        pipeline_statistics_query,
-        storage_resource_binding_array,
-        partially_bound_binding_array,
+        push_constants = 0x00030001,
+        texture_adapter_specific_format_features = 0x00030002,
+        multi_draw_indirect = 0x00030003,
+        multi_draw_indirect_count = 0x00030004,
+        vertex_writable_storage = 0x00030005,
+        texture_binding_array = 0x00030006,
+        sampled_texture_and_storage_buffer_array_non_uniform_indexing = 0x00030007,
+        pipeline_statistics_query = 0x00030008,
+        storage_resource_binding_array = 0x00030009,
+        partially_bound_binding_array = 0x0003000a,
+        texture_format16bit_norm = 0x0003000b,
+        texture_compression_astc_hdr = 0x0003000c,
+        // TODO: requires wgpu.h api change
+        // timestamp_query_inside_passes = 0x0003000d,
+        mappable_primary_buffers = 0x0003000e,
+        buffer_binding_array = 0x0003000f,
+        uniform_buffer_and_storage_texture_array_non_uniform_indexing = 0x00030010,
+        // TODO: requires wgpu.h api change
+        // address_mode_clamp_to_zero = 0x00030011,
+        // address_mode_clamp_to_border = 0x00030012,
+        // polygon_mode_line = 0x00030013,
+        // polygon_mode_point = 0x00030014,
+        // conservative_rasterization = 0x00030015,
+        // clear_texture = 0x00030016,
+        // spirv_shader_passthrough = 0x00030017,
+        // multiview = 0x00030018,
+        vertex_attribute64bit = 0x00030019,
+        texture_format_nv12 = 0x0003001a,
+        ray_tracing_acceleration_structure = 0x0003001b,
+        ray_query = 0x0003001c,
+        shader_f64 = 0x0003001d,
+        shader_i16 = 0x0003001e,
+        shader_primitive_index = 0x0003001f,
+        shader_early_depth_test = 0x00030020,
     };
 
     pub const LogLevel = enum(u32) {
@@ -2077,7 +2101,19 @@ pub const wgpu_native = struct {
 
     pub const SurfaceConfigurationExtras = extern struct {
         chain: ?ChainedStruct = null,
-        desired_maximum_frame_latency: WGPUBool,
+        desired_maximum_frame_latency: u32,
+    };
+
+    pub const NativeTextureFormat = enum(u32) {
+        // From FEATURES::TEXTURE_FORMAT_16BIT_NORM
+        r16_unorm = 196609,
+        r16_snorm,
+        rg16_unorm,
+        rg16_snorm,
+        rgba16_unorm,
+        rgba16_snorm,
+        // From FEATURES::TEXTURE_FORMAT_NV12
+        nv12,
     };
 
     pub const SubmissionIndex = u64;
