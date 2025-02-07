@@ -8,18 +8,12 @@ pub fn build(b: *std.Build) !void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
-    const lib = b.addStaticLibrary(.{
-        .name = "wgpu",
+    const wgpu = b.addModule("root", .{
         .root_source_file = b.path("src/root.zig"),
         .target = target,
         .optimize = optimize,
-    });
-    b.installArtifact(lib);
-    lib.linkLibCpp();
-    lib.linkLibC();
-
-    const mod = b.addModule("root", .{
-        .root_source_file = b.path("src/root.zig"),
+        .link_libc = true,
+        .link_libcpp = true,
     });
 
     { // Dependencies
@@ -27,17 +21,16 @@ pub fn build(b: *std.Build) !void {
         const cpu = @tagName(target.result.cpu.arch);
         const mode = if (optimize == .Debug) "debug" else "release";
 
-        var buffer: [256]u8 = undefined;
-        const wgpu_dep_name = try std.fmt.bufPrint(&buffer, "wgpu-{s}-{s}-{s}", .{ os, cpu, mode });
+        var wgpu_name_buffer: [256]u8 = undefined;
+        const wgpu_dep_name = try std.fmt.bufPrint(&wgpu_name_buffer, "wgpu-{s}-{s}-{s}", .{ os, cpu, mode });
 
         if (b.lazyDependency(wgpu_dep_name, .{})) |dep| {
-            mod.addIncludePath(dep.path(""));
-            // mod.addSystemIncludePath(dep.path(""));
+            wgpu.addIncludePath(dep.path(""));
 
             if (target.result.os.tag != .emscripten) {
-                mod.addLibraryPath(dep.path(""));
-                lib.addLibraryPath(dep.path(""));
-                lib.linkSystemLibrary2("wgpu_native", .{ .preferred_link_mode = .static });
+                wgpu.addLibraryPath(dep.path(""));
+                wgpu.addLibraryPath(dep.path(""));
+                wgpu.linkSystemLibrary("wgpu_native", .{ .preferred_link_mode = .static });
             }
         }
     }
@@ -45,23 +38,23 @@ pub fn build(b: *std.Build) !void {
         switch (target.result.os.tag) {
             .windows => {
                 if (b.lazyDependency("system_sdk", .{})) |system_sdk| {
-                    lib.addLibraryPath(system_sdk.path("windows/lib/x86_64-windows-gnu"));
+                    wgpu.addLibraryPath(system_sdk.path("windows/lib/x86_64-windows-gnu"));
                 }
-                lib.linkSystemLibrary("ole32");
-                lib.linkSystemLibrary("dxguid");
+                wgpu.linkSystemLibrary("ole32", .{});
+                wgpu.linkSystemLibrary("dxguid", .{});
             },
             .macos => {
                 if (b.lazyDependency("system_sdk", .{})) |system_sdk| {
-                    lib.addLibraryPath(system_sdk.path("macos12/usr/lib"));
-                    lib.addFrameworkPath(system_sdk.path("macos12/System/Library/Frameworks"));
+                    wgpu.addLibraryPath(system_sdk.path("macos12/usr/lib"));
+                    wgpu.addFrameworkPath(system_sdk.path("macos12/System/Library/Frameworks"));
                 }
-                lib.linkSystemLibrary("objc");
-                lib.linkFramework("Metal");
-                lib.linkFramework("CoreGraphics");
-                lib.linkFramework("Foundation");
-                lib.linkFramework("IOKit");
-                lib.linkFramework("IOSurface");
-                lib.linkFramework("QuartzCore");
+                wgpu.linkSystemLibrary("objc", .{});
+                wgpu.linkFramework("Metal", .{});
+                wgpu.linkFramework("CoreGraphics", .{});
+                wgpu.linkFramework("Foundation", .{});
+                wgpu.linkFramework("IOKit", .{});
+                wgpu.linkFramework("IOSurface", .{});
+                wgpu.linkFramework("QuartzCore", .{});
             },
             else => {},
         }
