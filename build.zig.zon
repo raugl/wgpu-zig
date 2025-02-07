@@ -1,0 +1,103 @@
+.{
+    .name = "wgpu-zig",
+    .version = "0.0.1",
+    .paths = .{
+        "build.zig",
+        "build.zig.zon",
+        "libs",
+        "src",
+        "README.md",
+        "LICENSE",
+    },
+    .dependencies = .{
+        .@"wgpu-linux-aarch64-debug" = .{
+            .url = "https://github.com/gfx-rs/wgpu-native/releases/download/v22.1.0.5/wgpu-linux-aarch64-debug.zip",
+            .hash = "1220c5c60367d517cf903af0d7069341c47bc9480745ab1b2eb79215f824e3ae5415",
+            .lazy = true,
+        },
+        .@"wgpu-linux-aarch64-release" = .{
+            .url = "https://github.com/gfx-rs/wgpu-native/releases/download/v22.1.0.5/wgpu-linux-aarch64-release.zip",
+            .hash = "1220a5b5a646335dd7eb574c1651b834bdacb0f0d9ded73d20d98ec51c0799fd6e39",
+            .lazy = true,
+        },
+        .@"wgpu-linux-x86_64-debug" = .{
+            .url = "https://github.com/gfx-rs/wgpu-native/releases/download/v22.1.0.5/wgpu-linux-x86_64-debug.zip",
+            .hash = "12207e9485f4e55fd7861d03ab0f5ad519d8d677683b015c49403c787c5d2e860462",
+            .lazy = true,
+        },
+        .@"wgpu-linux-x86_64-release" = .{
+            .url = "https://github.com/gfx-rs/wgpu-native/releases/download/v22.1.0.5/wgpu-linux-x86_64-release.zip",
+            .hash = "12203b428e491c4c4bc118546a82677a2fd22a54e4c4d946a5550af0bb9516981acd",
+            .lazy = true,
+        },
+        .@"wgpu-macos-aarch64-debug" = .{
+            .url = "https://github.com/gfx-rs/wgpu-native/releases/download/v22.1.0.5/wgpu-macos-aarch64-debug.zip",
+            .hash = "12208be7ee935c715c51c3e5c5f6ca8a5c321b9d48c7023acc8ee080ffc684156b07",
+            .lazy = true,
+        },
+        .@"wgpu-macos-aarch64-release" = .{
+            .url = "https://github.com/gfx-rs/wgpu-native/releases/download/v22.1.0.5/wgpu-macos-aarch64-release.zip",
+            .hash = "1220023318449ce4d30df22ee74b86e6a8dbb14f7f94adda1d67fbfafd73b47f1537",
+            .lazy = true,
+        },
+        .@"wgpu-macos-x86_64-debug" = .{
+            .url = "https://github.com/gfx-rs/wgpu-native/releases/download/v22.1.0.5/wgpu-macos-x86_64-debug.zip",
+            .hash = "12200bbcc01f1da81be8ad46576cc9050f0ae0a373dc3c25a49209da388146044319",
+            .lazy = true,
+        },
+        .@"wgpu-macos-x86_64-release" = .{
+            .url = "https://github.com/gfx-rs/wgpu-native/releases/download/v22.1.0.5/wgpu-macos-x86_64-release.zip",
+            .hash = "122031ddd3bf08247a0c99fc7184c864b90c222ca3727f312638d088697cd4b209c9",
+            .lazy = true,
+        },
+        .@"wgpu-windows-x86-debug" = .{
+            .url = "https://github.com/gfx-rs/wgpu-native/releases/download/v22.1.0.5/wgpu-windows-i686-debug.zip",
+            .hash = "1220236e1f3582750dc29df88453e5ced071cef6c7b99bb9c4fa8c0768b598810327",
+            .lazy = true,
+        },
+        .@"wgpu-windows-x86-release" = .{
+            .url = "https://github.com/gfx-rs/wgpu-native/releases/download/v22.1.0.5/wgpu-windows-i686-release.zip",
+            .hash = "1220300a415e6da6e4166b7d2967766200dbb27611e90b7b0f0581186d1cf46228f8",
+            .lazy = true,
+        },
+        .@"wgpu-windows-x86_64-debug" = .{
+            .url = "https://github.com/gfx-rs/wgpu-native/releases/download/v22.1.0.5/wgpu-windows-x86_64-debug.zip",
+            .hash = "12208d230d1caf2c05af6d98e468cd392bedafacbe7d54650a80544387da5b71b86d",
+            .lazy = true,
+        },
+        .@"wgpu-windows-x86_64-release" = .{
+            .url = "https://github.com/gfx-rs/wgpu-native/releases/download/v22.1.0.5/wgpu-windows-x86_64-release.zip",
+            .hash = "1220ad091260ce55550369c93489f75a44079d196f15b0de62140487380074d3923c",
+            .lazy = true,
+        },
+        // .dawn_x86_64_windows_gnu = .{
+        //     .url = "https://github.com/michal-z/webgpu_dawn-x86_64-windows-gnu/archive/d3a68014e6b6b53fd330a0ccba99e4dcfffddae5.tar.gz",
+        //     .hash = "1220f9448cde02ef3cd51bde2e0850d4489daa0541571d748154e89c6eb46c76a267",
+        //     .lazy = true,
+        // },
+        // .dawn_x86_64_linux_gnu = .{
+        //     .url = "https://github.com/michal-z/webgpu_dawn-x86_64-linux-gnu/archive/7d70db023bf254546024629cbec5ee6113e12a42.tar.gz",
+        //     .hash = "12204a3519efd49ea2d7cf63b544492a3a771d37eda320f86380813376801e4cfa73",
+        //     .lazy = true,
+        // },
+        // .dawn_aarch64_linux_gnu = .{
+        //     .url = "https://github.com/michal-z/webgpu_dawn-aarch64-linux-gnu/archive/c1f55e740a62f6942ff046e709ecd509a005dbeb.tar.gz",
+        //     .hash = "12205cd13f6849f94ef7688ee88c6b74c7918a5dfb514f8a403fcc2929a0aa342627",
+        //     .lazy = true,
+        // },
+        // .dawn_aarch64_macos = .{
+        //     .url = "https://github.com/michal-z/webgpu_dawn-aarch64-macos/archive/d2360cdfff0cf4a780cb77aa47c57aca03cc6dfe.tar.gz",
+        //     .hash = "12201fe677e9c7cfb8984a36446b329d5af23d03dc1e4f79a853399529e523a007fa",
+        //     .lazy = true,
+        // },
+        // .dawn_x86_64_macos = .{
+        //     .url = "https://github.com/michal-z/webgpu_dawn-x86_64-macos/archive/901716b10b31ce3e0d3fe479326b41e91d59c661.tar.gz",
+        //     .hash = "1220b1f02f2f7edd98a078c64e3100907d90311d94880a3cc5927e1ac009d002667a",
+        //     .lazy = true,
+        // },
+        .system_sdk = .{
+            .url = "https://github.com/zig-gamedev/system_sdk/archive/bf49d627a191e339f70e72668c8333717fb969b0.tar.gz",
+            .hash = "122047a9298c4c9dd43389d418d6826d469b192246ba0944102964cdc57f94c562df",
+        },
+    },
+}
