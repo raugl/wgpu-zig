@@ -748,11 +748,7 @@ pub const PipelineLayoutDescriptor = extern struct {
     next_in_chain: ?*const ChainedStruct = null,
     label: ?[*:0]const u8 = null,
     bind_group_layout_count: usize,
-    _bind_group_layouts: [*]const BindGroupLayout,
-
-    pub fn bind_group_layouts(self: PipelineLayoutDescriptor) []BindGroupLayout {
-        return self.bind_group_layouts_[0..self.bind_group_layout_count];
-    }
+    bind_group_layouts: [*]const BindGroupLayout,
 };
 
 pub const PrimitiveDepthClipControl = extern struct {
@@ -789,15 +785,11 @@ pub const RenderBundleEncoderDescriptor = extern struct {
     next_in_chain: ?*const ChainedStruct = null,
     label: ?[*:0]const u8 = null,
     color_format_count: usize,
-    _color_formats: [*]const TextureFormat,
+    color_formats: [*]const TextureFormat,
     depth_stencil_format: TextureFormat,
     sample_count: u32,
     depth_read_only: WGPUBool,
     stencil_read_only: WGPUBool,
-
-    pub fn color_formats(self: RenderBundleEncoderDescriptor) []TextureFormat {
-        return self.color_formats_[0..self.color_format_count];
-    }
 };
 
 pub const RenderPassDepthStencilAttachment = extern struct {
@@ -910,15 +902,11 @@ pub const SurfaceConfiguration = extern struct {
     format: TextureFormat,
     usage: TextureUsageFlags,
     view_format_count: usize,
-    _view_formats: [*]const TextureFormat,
+    view_formats: [*]const TextureFormat,
     alpha_mode: CompositeAlphaMode,
     width: u32,
     height: u32,
     present_mode: PresentMode,
-
-    pub fn view_formats(self: SurfaceConfiguration) []TextureFormat {
-        return self.view_formats_[0..self.view_format_count];
-    }
 };
 
 pub const SurfaceDescriptor = extern struct {
@@ -1014,11 +1002,7 @@ pub const BindGroupDescriptor = extern struct {
     label: ?[*:0]const u8 = null,
     layout: BindGroupLayout,
     entry_count: usize,
-    _entries: [*]const BindGroupEntry,
-
-    pub fn entries(self: BindGroupDescriptor) []const BindGroupEntry {
-        return self.entries_[0..self.entry_count];
-    }
+    entries: [*]const BindGroupEntry,
 };
 
 pub const BindGroupLayoutEntry = extern struct {
@@ -1085,11 +1069,7 @@ pub const ProgrammableStageDescriptor = extern struct {
     module: ShaderModule,
     entry_point: ?[*:0]const u8 = null,
     constant_count: usize,
-    _constants: [*]const ConstantEntry,
-
-    pub fn constants(self: ProgrammableStageDescriptor) []const ConstantEntry {
-        return self.constants[0..self.constant_count];
-    }
+    constants: [*]const ConstantEntry,
 };
 
 pub const RenderPassColorAttachment = extern struct {
@@ -1111,11 +1091,7 @@ pub const ShaderModuleDescriptor = extern struct {
     next_in_chain: ?*const ChainedStruct = null,
     label: ?[*:0]const u8 = null,
     hint_count: usize,
-    _hints: [*]const ShaderModuleCompilationHint,
-
-    pub fn hints(self: ShaderModuleDescriptor) []const ShaderModuleCompilationHint {
-        return self.hints[0..self.hint_count];
-    }
+    hints: [*]const ShaderModuleCompilationHint,
 };
 
 pub const SupportedLimits = extern struct {
@@ -1133,33 +1109,21 @@ pub const TextureDescriptor = extern struct {
     mip_level_count: u32,
     sample_count: u32,
     view_format_count: usize,
-    _view_formats: [*]const TextureFormat,
-
-    pub fn view_formats(self: TextureDescriptor) []const TextureFormat {
-        return self.view_formats[0..self.view_format_count];
-    }
+    view_formats: [*]const TextureFormat,
 };
 
 pub const VertexBufferLayout = extern struct {
     array_stride: u64,
     step_mode: VertexStepMode,
     attribute_count: usize,
-    _attributes: [*]const VertexAttribute,
-
-    pub fn attributes(self: VertexBufferLayout) []const VertexAttribute {
-        return self.attributes[0..self.attribute_count];
-    }
+    attributes: [*]const VertexAttribute,
 };
 
 pub const BindGroupLayoutDescriptor = extern struct {
     next_in_chain: ?*const ChainedStruct = null,
     label: ?[*:0]const u8 = null,
     entry_count: usize,
-    _entries: [*]const BindGroupLayoutEntry,
-
-    pub fn entries(self: BindGroupLayoutDescriptor) []const BindGroupLayoutEntry {
-        return self.entries[0..self.entry_count];
-    }
+    entries: [*]const BindGroupLayoutEntry,
 };
 
 pub const ColorTargetState = extern struct {
@@ -1213,16 +1177,9 @@ pub const FragmentState = extern struct {
     module: ShaderModule,
     entry_point: ?[*:0]const u8 = null,
     constant_count: usize,
-    _constants: [*]const ConstantEntry,
+    constants: [*]const ConstantEntry,
     target_count: usize,
-    _targets: [*]const ColorTargetState,
-
-    pub fn constants(self: FragmentState) []const ConstantEntry {
-        return self.constants[0..self.constant_count];
-    }
-    pub fn targets(self: FragmentState) []const ColorTargetState {
-        return self.targets[0..self.target_count];
-    }
+    targets: [*]const ColorTargetState,
 };
 
 pub const RenderPipelineDescriptor = extern struct {
@@ -1993,12 +1950,8 @@ pub const wgpu_native = struct {
 
     pub const PipelineLayoutExtras = extern struct {
         chain: ?ChainedStruct = null,
-        push_constant_range_count: usize,
-        _push_constant_ranges: [*]const PushConstantRange,
-
-        pub fn push_constant_ranges(self: PipelineLayoutExtras) []const PushConstantRange {
-            return self._push_constant_ranges[0..self.push_constant_range_count];
-        }
+        push_constant_range_count: usize = 0,
+        push_constant_ranges: [*]const PushConstantRange = undefined,
     };
 
     pub const WrappedSubmissionIndex = extern struct {
@@ -2015,12 +1968,8 @@ pub const wgpu_native = struct {
         chain: ?ChainedStruct = null,
         stage: ShaderStageFlags,
         code: [*:0]const u8,
-        define_count: u32,
-        _defines: [*]ShaderDefine,
-
-        pub fn defines(self: ShaderModuleGLSLDescriptor) []ShaderDefine {
-            return self._defines[0..self.define_count];
-        }
+        define_count: u32 = 0,
+        defines: [*]ShaderDefine = undefined,
     };
 
     pub const RegistryReport = extern struct {
@@ -2066,22 +2015,12 @@ pub const wgpu_native = struct {
 
     pub const BindGroupEntryExtras = extern struct {
         chain: ?ChainedStruct = null,
-        _buffers: [*]const Buffer,
-        buffer_count: usize,
-        _samplers: [*]const Sampler,
-        sampler_count: usize,
-        _texture_views: [*]const TextureView,
-        texture_view_count: usize,
-
-        pub fn buffers(self: BindGroupEntryExtras) []const Buffer {
-            return self._buffers[0..self.buffer_count];
-        }
-        pub fn samplers(self: BindGroupEntryExtras) []const Sampler {
-            return self._samplers[0..self.sampler_count];
-        }
-        pub fn texture_views(self: BindGroupEntryExtras) []const TextureView {
-            return self._texture_views[0..self.texture_view_count];
-        }
+        buffers: [*]const Buffer = undefined,
+        buffer_count: usize = 0,
+        samplers: [*]const Sampler = undefined,
+        sampler_count: usize = 0,
+        texture_views: [*]const TextureView = undefined,
+        texture_view_count: usize = 0,
     };
 
     pub const BindGroupLayoutEntryExtras = extern struct {
@@ -2091,12 +2030,8 @@ pub const wgpu_native = struct {
 
     pub const QuerySetDescriptorExtras = extern struct {
         chain: ?ChainedStruct = null,
-        _pipeline_statistics: [*]const PipelineStatisticName,
+        pipeline_statistics: [*]const PipelineStatisticName,
         pipeline_statistic_count: usize,
-
-        pub fn pipeline_statistics(self: QuerySetDescriptorExtras) []const PipelineStatisticName {
-            return self._pipeline_statistics[0..self.pipeline_statistic_count];
-        }
     };
 
     pub const SurfaceConfigurationExtras = extern struct {
