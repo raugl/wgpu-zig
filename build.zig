@@ -1,12 +1,15 @@
 const std = @import("std");
 
 // TODO: Test if `preferred_link_mode` has any effect
+// TODO: Add step for translating the C headers
+// TODO: Get rid of the external dependency `system_sdk`
+
 pub fn build(b: *std.Build) !void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
     const lib = b.addStaticLibrary(.{
-        .name = "webgpu",
+        .name = "wgpu",
         .root_source_file = b.path("src/root.zig"),
         .target = target,
         .optimize = optimize,
@@ -28,12 +31,13 @@ pub fn build(b: *std.Build) !void {
         const wgpu_dep_name = try std.fmt.bufPrint(&buffer, "wgpu-{s}-{s}-{s}", .{ os, cpu, mode });
 
         if (b.lazyDependency(wgpu_dep_name, .{})) |dep| {
-            lib.addSystemIncludePath(dep.path(""));
+            mod.addIncludePath(dep.path(""));
+            // mod.addSystemIncludePath(dep.path(""));
 
             if (target.result.os.tag != .emscripten) {
                 mod.addLibraryPath(dep.path(""));
                 lib.addLibraryPath(dep.path(""));
-                lib.linkSystemLibrary("wgpu_native", .{ .preferred_link_mode = .static });
+                lib.linkSystemLibrary2("wgpu_native", .{ .preferred_link_mode = .static });
             }
         }
     }
@@ -43,21 +47,21 @@ pub fn build(b: *std.Build) !void {
                 if (b.lazyDependency("system_sdk", .{})) |system_sdk| {
                     lib.addLibraryPath(system_sdk.path("windows/lib/x86_64-windows-gnu"));
                 }
-                lib.linkSystemLibrary("ole32", .{});
-                lib.linkSystemLibrary("dxguid", .{});
+                lib.linkSystemLibrary("ole32");
+                lib.linkSystemLibrary("dxguid");
             },
             .macos => {
                 if (b.lazyDependency("system_sdk", .{})) |system_sdk| {
                     lib.addLibraryPath(system_sdk.path("macos12/usr/lib"));
                     lib.addFrameworkPath(system_sdk.path("macos12/System/Library/Frameworks"));
                 }
-                lib.linkSystemLibrary("objc", .{});
-                lib.linkFramework("Metal", .{});
-                lib.linkFramework("CoreGraphics", .{});
-                lib.linkFramework("Foundation", .{});
-                lib.linkFramework("IOKit", .{});
-                lib.linkFramework("IOSurface", .{});
-                lib.linkFramework("QuartzCore", .{});
+                lib.linkSystemLibrary("objc");
+                lib.linkFramework("Metal");
+                lib.linkFramework("CoreGraphics");
+                lib.linkFramework("Foundation");
+                lib.linkFramework("IOKit");
+                lib.linkFramework("IOSurface");
+                lib.linkFramework("QuartzCore");
             },
             else => {},
         }
