@@ -20,7 +20,6 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
-// TODO: Add helper factories for chained structs
 // TODO: Add default values
 // TODO: Add sync function wrappers
 // TODO: I think emscripten has different values for enums, maybe even different structs
@@ -837,7 +836,7 @@ pub const PipelineLayoutDescriptor = extern struct {
 };
 
 pub const PrimitiveDepthClipControl = extern struct {
-    chain: ChainedStruct,
+    chain: ChainedStruct = .{ .s_type = .primitive_depth_clip_control },
     unclipped_depth: Bool,
 };
 
@@ -890,7 +889,7 @@ pub const RenderPassDepthStencilAttachment = extern struct {
 };
 
 pub const RenderPassDescriptorMaxDrawCount = extern struct {
-    chain: ChainedStruct,
+    chain: ChainedStruct = .{ .s_type = .render_pass_descriptor_max_draw_count },
     max_draw_count: u64,
 };
 
@@ -935,15 +934,50 @@ pub const ShaderModuleCompilationHint = extern struct {
 };
 
 pub const ShaderModuleSPIRVDescriptor = extern struct {
-    chain: ChainedStruct,
+    chain: ChainedStruct = .{ .s_type = .shader_module_spirv_descriptor },
     code_size: u32,
     code: *const u32,
 };
 
+pub const MergedShaderModuleSPIRVDescriptor = struct {
+    label: ?[*:0]const u8 = null,
+    hints: []const ShaderModuleCompilationHint = .{},
+    code: []const u32 = .{},
+};
+
+pub inline fn shaderModuleSPIRVDescriptor(descriptor: MergedShaderModuleSPIRVDescriptor) ShaderModuleDescriptor {
+    return ShaderModuleDescriptor{
+        .next_in_chain = @ptrCast(&ShaderModuleSPIRVDescriptor{
+            .code_size = @intCast(descriptor.code.len),
+            .code = descriptor.code.ptr,
+        }),
+        .label = descriptor.label,
+        .hint_count = descriptor.hints.len,
+        .hints = descriptor.hints.ptr,
+    };
+}
+
 pub const ShaderModuleWGSLDescriptor = extern struct {
-    chain: ChainedStruct,
+    chain: ChainedStruct = .{ .s_type = .shader_module_wgsl_descriptor },
     code: [*:0]const u8,
 };
+
+pub const MergedShaderModuleWGSLDescriptor = struct {
+    label: ?[*:0]const u8 = null,
+    hints: []const ShaderModuleCompilationHint = .{},
+    code: [*:0]const u8,
+};
+
+pub inline fn shaderModuleWGSLDescriptor(descriptor: MergedShaderModuleWGSLDescriptor) ShaderModuleDescriptor {
+    return ShaderModuleDescriptor{
+        .next_in_chain = @ptrCast(&ShaderModuleWGSLDescriptor{
+            .code = descriptor.code,
+        }),
+        .label = descriptor.label,
+        .hint_count = descriptor.hints.len,
+        .hints = descriptor.hints.ptr,
+    };
+}
 
 pub const StencilFaceState = extern struct {
     compare: CompareFunction,
@@ -1000,43 +1034,149 @@ pub const SurfaceDescriptor = extern struct {
 };
 
 pub const SurfaceDescriptorFromAndroidNativeWindow = extern struct {
-    chain: ChainedStruct,
+    chain: ChainedStruct = .{ .s_type = .surface_descriptor_from_android_native_window },
     window: *anyopaque,
 };
 
+pub const MergedSurfaceDescriptorFromAndroidWindow = struct {
+    label: ?[*:0]const u8 = null,
+    window: *anyopaque,
+};
+
+pub inline fn surfaceDescriptorFromAndroidNativeWindow(descriptor: MergedSurfaceDescriptorFromAndroidWindow) SurfaceDescriptor {
+    return SurfaceDescriptor{
+        .next_in_chain = @ptrCast(&SurfaceDescriptorFromAndroidNativeWindow{
+            .window = descriptor.window,
+        }),
+        .label = descriptor.label,
+    };
+}
+
 pub const SurfaceDescriptorFromCanvasHTMLSelector = extern struct {
-    chain: ChainedStruct,
+    chain: ChainedStruct = .{ .s_type = .surface_descriptor_from_canvas_html_selector },
     selector: [*:0]const u8,
 };
 
+pub const MergedSurfaceDescriptorFromCanvasHTMLSelector = struct {
+    label: ?[*:0]const u8 = null,
+    selector: [*:0]const u8,
+};
+
+pub inline fn surfaceDescriptorFromCanvasHTMLSelector(descriptor: MergedSurfaceDescriptorFromCanvasHTMLSelector) SurfaceDescriptor {
+    return SurfaceDescriptor{
+        .next_in_chain = @ptrCast(&SurfaceDescriptorFromCanvasHTMLSelector{
+            .selector = descriptor.selector,
+        }),
+        .label = descriptor.label,
+    };
+}
+
 pub const SurfaceDescriptorFromMetalLayer = extern struct {
-    chain: ChainedStruct,
+    chain: ChainedStruct = .{ .s_type = .surface_descriptor_from_metal_layer },
     layer: *anyopaque,
 };
 
+pub const MergedSurfaceDescriptorFromMetalLayer = struct {
+    label: ?[*:0]const u8 = null,
+    layer: *anyopaque,
+};
+
+pub inline fn surfaceDescriptorFromMetalLayer(descriptor: MergedSurfaceDescriptorFromMetalLayer) SurfaceDescriptor {
+    return SurfaceDescriptor{
+        .next_in_chain = @ptrCast(&SurfaceDescriptorFromMetalLayer{
+            .layer = descriptor.layer,
+        }),
+        .label = descriptor.label,
+    };
+}
+
 pub const SurfaceDescriptorFromWaylandSurface = extern struct {
-    chain: ChainedStruct,
+    chain: ChainedStruct = .{ .s_type = .surface_descriptor_from_wayland_surface },
     display: *anyopaque,
     surface: *anyopaque,
 };
 
+pub const MergedSurfaceDescriptorFromWaylandSurface = struct {
+    label: ?[*:0]const u8 = null,
+    display: *anyopaque,
+    surface: *anyopaque,
+};
+
+pub inline fn surfaceDescriptorFromWaylandSurface(descriptor: MergedSurfaceDescriptorFromWaylandSurface) SurfaceDescriptor {
+    return SurfaceDescriptor{
+        .next_in_chain = @ptrCast(&SurfaceDescriptorFromWaylandSurface{
+            .display = descriptor.display,
+            .surface = descriptor.surface,
+        }),
+        .label = descriptor.label,
+    };
+}
+
 pub const SurfaceDescriptorFromWindowsHWND = extern struct {
-    chain: ChainedStruct,
+    chain: ChainedStruct = .{ .s_type = .surface_descriptor_from_windows_hwnd },
     hinstance: *anyopaque,
     hwnd: *anyopaque,
 };
 
+pub const MergedSurfaceDescriptorFromWindowsHWND = struct {
+    label: ?[*:0]const u8 = null,
+    hinstance: *anyopaque,
+    hwnd: *anyopaque,
+};
+
+pub inline fn surfaceDescriptorFromWindowsHWND(descriptor: MergedSurfaceDescriptorFromWindowsHWND) SurfaceDescriptor {
+    return SurfaceDescriptor{
+        .next_in_chain = @ptrCast(&SurfaceDescriptorFromWindowsHWND{
+            .hinstance = descriptor.hinstance,
+            .hwnd = descriptor.hwnd,
+        }),
+        .label = descriptor.label,
+    };
+}
+
 pub const SurfaceDescriptorFromXcbWindow = extern struct {
-    chain: ChainedStruct,
+    chain: ChainedStruct = .{ .s_type = .surface_descriptor_from_xcb_window },
     connection: *anyopaque,
     window: u32,
 };
 
+pub const MergedSurfaceDescriptorFromXcbWindow = struct {
+    label: ?[*:0]const u8 = null,
+    connection: *anyopaque,
+    window: u32,
+};
+
+pub inline fn surfaceDescriptorFromXcbWindow(descriptor: MergedSurfaceDescriptorFromXcbWindow) SurfaceDescriptor {
+    return SurfaceDescriptor{
+        .next_in_chain = @ptrCast(&SurfaceDescriptorFromXcbWindow{
+            .connection = descriptor.connection,
+            .window = descriptor.window,
+        }),
+        .label = descriptor.label,
+    };
+}
+
 pub const SurfaceDescriptorFromXlibWindow = extern struct {
-    chain: ChainedStruct,
+    chain: ChainedStruct = .{ .s_type = .surface_descriptor_from_xlib_window },
     display: *anyopaque,
     window: u64,
 };
+
+pub const MergedSurfaceDescriptorFromXlibWindow = struct {
+    label: ?[*:0]const u8 = null,
+    display: *anyopaque,
+    window: u64,
+};
+
+pub inline fn surfaceDescriptorFromXlibWindow(descriptor: MergedSurfaceDescriptorFromXlibWindow) SurfaceDescriptor {
+    return SurfaceDescriptor{
+        .next_in_chain = @ptrCast(&SurfaceDescriptorFromXlibWindow{
+            .display = descriptor.display,
+            .window = descriptor.window,
+        }),
+        .label = descriptor.label,
+    };
+}
 
 pub const SurfaceTexture = extern struct {
     texture: Texture = undefined,
@@ -1961,7 +2101,7 @@ pub const wgpu_native = struct {
     };
 
     pub const InstanceExtras = extern struct {
-        chain: ?ChainedStruct = null,
+        chain: ChainedStruct = .{ .s_type = .instance_extras },
         backends: InstanceBackendFlags,
         flags: InstanceFlags,
         dx12_shader_compiler: Dx12Compiler,
@@ -1971,7 +2111,7 @@ pub const wgpu_native = struct {
     };
 
     pub const DeviceExtras = extern struct {
-        chain: ?ChainedStruct = null,
+        chain: ChainedStruct = .{ .s_type = .device_extras },
         trace_path: [*:0]const u8,
     };
 
@@ -1981,12 +2121,12 @@ pub const wgpu_native = struct {
     };
 
     pub const RequiredLimitsExtras = extern struct {
-        chain: ?ChainedStruct = null,
+        chain: ChainedStruct = .{ .s_type = .required_limits_extras },
         limits: NativeLimits = .{},
     };
 
     pub const SupportedLimitsExtras = extern struct {
-        chain: ?ChainedStructOut = null,
+        chain: ChainedStructOut = .{ .s_type = .supported_limits_extras },
         limits: NativeLimits = .{},
     };
 
@@ -1997,7 +2137,7 @@ pub const wgpu_native = struct {
     };
 
     pub const PipelineLayoutExtras = extern struct {
-        chain: ?ChainedStruct = null,
+        chain: ChainedStruct = .{ .s_type = .pipeline_layout_extras },
         push_constant_range_count: usize = 0,
         push_constant_ranges: [*]const PushConstantRange = undefined,
     };
@@ -2013,12 +2153,34 @@ pub const wgpu_native = struct {
     };
 
     pub const ShaderModuleGLSLDescriptor = extern struct {
-        chain: ?ChainedStruct = null,
+        chain: ChainedStruct = .{ .s_type = .shader_module_glsl_descriptor },
         stage: ShaderStageFlags,
         code: [*:0]const u8,
         define_count: u32 = 0,
         defines: [*]ShaderDefine = undefined,
     };
+
+    pub const MergedShaderModuleGLSLDescriptor = struct {
+        label: ?[*:0]const u8 = null,
+        hints: []ShaderModuleCompilationHint = .{},
+        stage: ShaderStageFlags,
+        code: [*:0]const u8,
+        defines: []ShaderDefine = .{},
+    };
+
+    pub inline fn shaderModuleGLSLDescriptor(descriptor: MergedShaderModuleGLSLDescriptor) ShaderModuleDescriptor {
+        return ShaderModuleDescriptor{
+            .next_in_chain = @ptrCast(&ShaderModuleGLSLDescriptor{
+                .stage = descriptor.stage,
+                .code = descriptor.code,
+                .define_count = @intCast(descriptor.defines.len),
+                .defines = descriptor.defines.ptr,
+            }),
+            .label = descriptor.label,
+            .hint_count = descriptor.hints.len,
+            .hints = descriptor.hints.ptr,
+        };
+    }
 
     pub const RegistryReport = extern struct {
         num_allocated: usize = 0,
@@ -2062,7 +2224,7 @@ pub const wgpu_native = struct {
     };
 
     pub const BindGroupEntryExtras = extern struct {
-        chain: ?ChainedStruct = null,
+        chain: ChainedStruct = .{ .s_type = .bind_group_entry_extras },
         buffers: [*]const Buffer = undefined,
         buffer_count: usize = 0,
         samplers: [*]const Sampler = undefined,
@@ -2072,18 +2234,18 @@ pub const wgpu_native = struct {
     };
 
     pub const BindGroupLayoutEntryExtras = extern struct {
-        chain: ?ChainedStruct = null,
+        chain: ChainedStruct = .{ .s_type = .bind_group_layout_entry_extras },
         count: u32,
     };
 
     pub const QuerySetDescriptorExtras = extern struct {
-        chain: ?ChainedStruct = null,
+        chain: ChainedStruct = .{ .s_type = .query_set_descriptor_extras },
         pipeline_statistics: [*]const PipelineStatisticName,
         pipeline_statistic_count: usize,
     };
 
     pub const SurfaceConfigurationExtras = extern struct {
-        chain: ?ChainedStruct = null,
+        chain: ChainedStruct = .{ .s_type = .surface_configuration_extras },
         desired_maximum_frame_latency: u32,
     };
 
