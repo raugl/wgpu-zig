@@ -7,7 +7,11 @@ pub fn build(b: *std.Build) !void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
-    const shared = b.option(bool, "shared", "Link wgpu-native as a shared library (default: off)") orelse false;
+    const shared = b.option(
+        bool,
+        "shared",
+        "Link wgpu-native as a shared library (default: off)",
+    ) orelse false;
 
     const wgpu = b.addModule("root", .{
         .root_source_file = b.path("src/root.zig"),

@@ -24,12 +24,17 @@
 // TODO: Add default values
 // TODO: Add sync function wrappers
 // TODO: I think emscripten has different values for enums, maybe even different structs
+// TODO: wasm and cross compilation support
 
 const std = @import("std");
-const Allocator = std.mem.Allocator;
 const wgpu = wgpu_native;
+const Allocator = std.mem.Allocator;
 
-pub const WGPUBool = enum(u32) {
+test {
+    _ = std.testing.refAllDeclsRecursive(@This());
+}
+
+pub const Bool = enum(u32) {
     false = 0,
     true = 1,
 };
@@ -712,7 +717,7 @@ pub const BlendComponent = extern struct {
 pub const BufferBindingLayout = extern struct {
     next_in_chain: ?*const ChainedStruct = null,
     type: BufferBindingType,
-    has_dynamic_offset: WGPUBool,
+    has_dynamic_offset: Bool,
     min_binding_size: u64,
 };
 
@@ -721,7 +726,7 @@ pub const BufferDescriptor = extern struct {
     label: ?[*:0]const u8 = null,
     usage: BufferUsageFlags,
     size: u64,
-    mapped_at_creation: WGPUBool,
+    mapped_at_creation: Bool,
 };
 
 pub const Color = extern struct {
@@ -815,13 +820,13 @@ pub const MultisampleState = extern struct {
     next_in_chain: ?*const ChainedStruct = null,
     count: u32,
     mask: u32,
-    alpha_to_coverage_enabled: WGPUBool,
+    alpha_to_coverage_enabled: Bool,
 };
 
 pub const Origin3D = extern struct {
-    x: u32,
-    y: u32,
-    z: u32,
+    x: u32 = 0,
+    y: u32 = 0,
+    z: u32 = 0,
 };
 
 pub const PipelineLayoutDescriptor = extern struct {
@@ -833,7 +838,7 @@ pub const PipelineLayoutDescriptor = extern struct {
 
 pub const PrimitiveDepthClipControl = extern struct {
     chain: ChainedStruct,
-    unclipped_depth: WGPUBool,
+    unclipped_depth: Bool,
 };
 
 pub const PrimitiveState = extern struct {
@@ -868,8 +873,8 @@ pub const RenderBundleEncoderDescriptor = extern struct {
     color_formats: [*]const TextureFormat = undefined,
     depth_stencil_format: TextureFormat,
     sample_count: u32,
-    depth_read_only: WGPUBool,
-    stencil_read_only: WGPUBool,
+    depth_read_only: Bool,
+    stencil_read_only: Bool,
 };
 
 pub const RenderPassDepthStencilAttachment = extern struct {
@@ -877,11 +882,11 @@ pub const RenderPassDepthStencilAttachment = extern struct {
     depth_load_op: LoadOp,
     depth_store_op: StoreOp,
     depth_clear_value: f32,
-    depth_read_only: WGPUBool,
+    depth_read_only: Bool,
     stencil_load_op: LoadOp,
     stencil_store_op: StoreOp,
     stencil_clear_value: u32,
-    stencil_read_only: WGPUBool,
+    stencil_read_only: Bool,
 };
 
 pub const RenderPassDescriptorMaxDrawCount = extern struct {
@@ -900,7 +905,7 @@ pub const RequestAdapterOptions = extern struct {
     compatible_surface: ?Surface = null,
     power_preference: PowerPreference = .undefined,
     backend_type: BackendType = .undefined,
-    force_fallback_adapter: WGPUBool = .false,
+    force_fallback_adapter: Bool = .false,
 };
 
 pub const SamplerBindingLayout = extern struct {
@@ -1035,7 +1040,7 @@ pub const SurfaceDescriptorFromXlibWindow = extern struct {
 
 pub const SurfaceTexture = extern struct {
     texture: Texture = undefined,
-    suboptimal: WGPUBool = .false,
+    suboptimal: Bool = .false,
     status: SurfaceGetCurrentTextureStatus = .success,
 };
 
@@ -1043,7 +1048,7 @@ pub const TextureBindingLayout = extern struct {
     next_in_chain: ?*const ChainedStruct = null,
     sample_type: TextureSampleType,
     view_dimension: TextureViewDimension,
-    multisampled: WGPUBool,
+    multisampled: Bool,
 };
 
 pub const TextureDataLayout = extern struct {
@@ -1128,7 +1133,7 @@ pub const ComputePassDescriptor = extern struct {
 pub const DepthStencilState = extern struct {
     next_in_chain: ?*const ChainedStruct = null,
     format: TextureFormat,
-    depth_write_enabled: WGPUBool,
+    depth_write_enabled: Bool,
     depth_compare: CompareFunction,
     stencil_front: StencilFaceState,
     stencil_back: StencilFaceState,
@@ -1295,9 +1300,9 @@ const cdef = struct {
     pub extern fn wgpuCreateInstance(descriptor: ?*const InstanceDescriptor) Instance;
     pub extern fn wgpuGetProcAddress(device: Device, procName: [*:0]const u8) Proc;
     pub extern fn wgpuAdapterEnumerateFeatures(adapter: Adapter, features: ?[*]FeatureName) usize;
-    pub extern fn wgpuAdapterGetLimits(adapter: Adapter, limits: *SupportedLimits) WGPUBool;
+    pub extern fn wgpuAdapterGetLimits(adapter: Adapter, limits: *SupportedLimits) Bool;
     pub extern fn wgpuAdapterGetInfo(adapter: Adapter, info: *AdapterInfo) void;
-    pub extern fn wgpuAdapterHasFeature(adapter: Adapter, feature: FeatureName) WGPUBool;
+    pub extern fn wgpuAdapterHasFeature(adapter: Adapter, feature: FeatureName) Bool;
     pub extern fn wgpuAdapterRequestDevice(adapter: Adapter, descriptor: ?*const DeviceDescriptor, callback: AdapterRequestDeviceCallback, userdata: ?*anyopaque) void;
     pub extern fn wgpuAdapterReference(adapter: Adapter) void;
     pub extern fn wgpuAdapterRelease(adapter: Adapter) void;
@@ -1369,16 +1374,16 @@ const cdef = struct {
     pub extern fn wgpuDeviceCreateTexture(device: Device, descriptor: *const TextureDescriptor) Texture;
     pub extern fn wgpuDeviceDestroy(device: Device) void;
     pub extern fn wgpuDeviceEnumerateFeatures(device: Device, features: ?[*]FeatureName) usize;
-    pub extern fn wgpuDeviceGetLimits(device: Device, limits: *SupportedLimits) WGPUBool;
+    pub extern fn wgpuDeviceGetLimits(device: Device, limits: *SupportedLimits) Bool;
     pub extern fn wgpuDeviceGetQueue(device: Device) Queue;
-    pub extern fn wgpuDeviceHasFeature(device: Device, feature: FeatureName) WGPUBool;
+    pub extern fn wgpuDeviceHasFeature(device: Device, feature: FeatureName) Bool;
     pub extern fn wgpuDevicePopErrorScope(device: Device, callback: ErrorCallback, userdata: ?*anyopaque) void;
     pub extern fn wgpuDevicePushErrorScope(device: Device, filter: ErrorFilter) void;
     pub extern fn wgpuDeviceSetLabel(device: Device, label: [*:0]const u8) void;
     pub extern fn wgpuDeviceReference(device: Device) void;
     pub extern fn wgpuDeviceRelease(device: Device) void;
     pub extern fn wgpuInstanceCreateSurface(instance: Instance, descriptor: *const SurfaceDescriptor) Surface;
-    pub extern fn wgpuInstanceHasWGSLLanguageFeature(instance: Instance, feature: WGSLFeatureName) WGPUBool;
+    pub extern fn wgpuInstanceHasWGSLLanguageFeature(instance: Instance, feature: WGSLFeatureName) Bool;
     pub extern fn wgpuInstanceProcessEvents(instance: Instance) void;
     pub extern fn wgpuInstanceRequestAdapter(instance: Instance, options: ?*const RequestAdapterOptions, callback: InstanceRequestAdapterCallback, userdata: ?*anyopaque) void;
     pub extern fn wgpuInstanceReference(instance: Instance) void;
@@ -1480,7 +1485,7 @@ const cdef = struct {
     pub extern fn wgpuGenerateReport(instance: Instance, report: *wgpu.GlobalReport) void;
     pub extern fn wgpuInstanceEnumerateAdapters(instance: Instance, options: ?*const wgpu.InstanceEnumerateAdapterOptions, adapters: ?[*]Adapter) usize;
     pub extern fn wgpuQueueSubmitForIndex(queue: Queue, commandCount: usize, commands: [*]const CommandBuffer) wgpu.SubmissionIndex;
-    pub extern fn wgpuDevicePoll(device: Device, wait: WGPUBool, wrappedSubmissionIndex: ?*const wgpu.WrappedSubmissionIndex) WGPUBool;
+    pub extern fn wgpuDevicePoll(device: Device, wait: Bool, wrappedSubmissionIndex: ?*const wgpu.WrappedSubmissionIndex) Bool;
     pub extern fn wgpuSetLogCallback(callback: wgpu.LogCallback, userdata: ?*anyopaque) void;
     pub extern fn wgpuSetLogLevel(level: wgpu.LogLevel) void;
     pub extern fn wgpuGetVersion() u32;
