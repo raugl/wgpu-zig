@@ -1,7 +1,6 @@
 const std = @import("std");
 
 // TODO: Add step for generating translated C headers
-// TODO: Get rid of the external dependency `system_sdk`
 // TODO: Fix include headers
 
 pub fn build(b: *std.Build) !void {
@@ -14,8 +13,8 @@ pub fn build(b: *std.Build) !void {
         "Link wgpu-native as a shared library (default: off)",
     ) orelse false;
 
-    const wgpu = b.addModule("root", .{
-        .root_source_file = b.path("src/root.zig"),
+    const wgpu = b.addModule("wgpu", .{
+        .root_source_file = b.path("src/wgpu.zig"),
         .target = target,
         .optimize = optimize,
         .link_libc = true,
