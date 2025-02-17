@@ -21,12 +21,11 @@
 // SOFTWARE.
 
 // TODO: Add default values
-// TODO: Add sync function wrappers
 // TODO: I think emscripten has different values for enums, maybe even different structs
 // TODO: wasm and cross compilation support
 
 const std = @import("std");
-const wgpu = wgpu_native;
+const wgpu = @This();
 const Allocator = std.mem.Allocator;
 
 test {
@@ -860,6 +859,18 @@ pub const QueueDescriptor = extern struct {
     label: ?[*:0]const u8 = null,
 };
 
+pub const RequestAdapterResponse = struct {
+    status: RequestAdapterStatus,
+    message: [*:0]const u8,
+    adapter: Adapter,
+};
+
+pub const RequestDeviceResponse = struct {
+    status: RequestDeviceStatus,
+    message: [*:0]const u8,
+    adapter: Device,
+};
+
 pub const RenderBundleDescriptor = extern struct {
     next_in_chain: ?*const ChainedStruct = null,
     label: ?[*:0]const u8 = null,
@@ -1622,12 +1633,12 @@ const cdef = struct {
     pub extern fn wgpuTextureViewRelease(textureView: TextureView) void;
 
     // wgpu-native extras (wgpu.h)
-    pub extern fn wgpuGenerateReport(instance: Instance, report: *wgpu.GlobalReport) void;
-    pub extern fn wgpuInstanceEnumerateAdapters(instance: Instance, options: ?*const wgpu.InstanceEnumerateAdapterOptions, adapters: ?[*]Adapter) usize;
-    pub extern fn wgpuQueueSubmitForIndex(queue: Queue, commandCount: usize, commands: [*]const CommandBuffer) wgpu.SubmissionIndex;
-    pub extern fn wgpuDevicePoll(device: Device, wait: Bool, wrappedSubmissionIndex: ?*const wgpu.WrappedSubmissionIndex) Bool;
-    pub extern fn wgpuSetLogCallback(callback: wgpu.LogCallback, userdata: ?*anyopaque) void;
-    pub extern fn wgpuSetLogLevel(level: wgpu.LogLevel) void;
+    pub extern fn wgpuGenerateReport(instance: Instance, report: *native.GlobalReport) void;
+    pub extern fn wgpuInstanceEnumerateAdapters(instance: Instance, options: ?*const native.InstanceEnumerateAdapterOptions, adapters: ?[*]Adapter) usize;
+    pub extern fn wgpuQueueSubmitForIndex(queue: Queue, commandCount: usize, commands: [*]const CommandBuffer) native.SubmissionIndex;
+    pub extern fn wgpuDevicePoll(device: Device, wait: Bool, wrappedSubmissionIndex: ?*const native.WrappedSubmissionIndex) Bool;
+    pub extern fn wgpuSetLogCallback(callback: native.LogCallback, userdata: ?*anyopaque) void;
+    pub extern fn wgpuSetLogLevel(level: native.LogLevel) void;
     pub extern fn wgpuGetVersion() u32;
     pub extern fn wgpuRenderPassEncoderSetPushConstants(encoder: RenderPassEncoder, stages: ShaderStageFlags, offset: u32, sizeBytes: u32, data: [*]const u8) void;
     pub extern fn wgpuRenderPassEncoderMultiDrawIndirect(encoder: RenderPassEncoder, buffer: Buffer, offset: u64, count: u32) void;
@@ -1644,6 +1655,55 @@ pub fn createInstance(descriptor: ?InstanceDescriptor) Instance {
     return cdef.wgpuCreateInstance(if (descriptor) |d| &d else null);
 }
 
+fn defaultAdapterCallback(
+    status: RequestAdapterStatus,
+    adapter: Adapter,
+    message: [*:0]const u8,
+    userdata: ?*anyopaque,
+) callconv(.C) void {
+    const ud_response: *RequestAdapterResponse = @ptrCast(@alignCast(userdata));
+    ud_response.* = .{ .status = status, .message = message, .adapter = adapter };
+}
+
+pub fn instanceRequestAdapter(instance: Instance, options: ?RequestAdapterOptions) error{ Unavailable, Error, Unknown }!Adapter {
+    var response: RequestAdapterResponse = undefined;
+    instance.requestAdapter(options, defaultAdapterCallback, &response);
+
+    if (response.status != .success) {
+        std.log.err("WebGPU error: {s} {s}", .{ @tagName(response.status), response.message });
+        return switch (response.status) {
+            .@"error" => error.Error,
+            .unknown => error.Unknown,
+            .unavailable => error.Unavailable,
+        };
+    }
+    return response;
+}
+
+fn defaultDeviceCallback(
+    status: RequestDeviceStatus,
+    device: Adapter,
+    message: [*:0]const u8,
+    userdata: ?*anyopaque,
+) callconv(.C) void {
+    const ud_response: *RequestDeviceResponse = @ptrCast(@alignCast(userdata));
+    ud_response.* = .{ .status = status, .message = message, .device = device };
+}
+
+pub fn adapterRequestDevice(adapter: Adapter, descriptor: ?DeviceDescriptor) error{ Error, Unknown }!Device {
+    var response: RequestDeviceResponse = undefined;
+    adapter.requestDevice(descriptor, defaultDeviceCallback, &response);
+
+    if (response.status != .success) {
+        std.log.err("WebGPU error: {s} {s}", .{ @tagName(response.status), response.message });
+        return switch (response.status) {
+            .@"error" => error.Error,
+            .unknown => error.Unknown,
+        };
+    }
+    return response;
+}
+
 pub const Adapter = *opaque {
     pub fn enumerateFeatures(self: Adapter, alloc: Allocator) Allocator.Error![]FeatureName {
         const count = cdef.wgpuAdapterEnumerateFeatures(self, null);
@@ -1651,7 +1711,6 @@ pub const Adapter = *opaque {
         _ = cdef.wgpuAdapterEnumerateFeatures(self, @ptrCast(features));
         return features;
     }
-
     pub fn getLimits(self: Adapter) ?SupportedLimits {
         var limits = SupportedLimits{};
         if (cdef.wgpuAdapterGetLimits(self, &limits) == .true) {
@@ -1659,21 +1718,19 @@ pub const Adapter = *opaque {
         }
         return null;
     }
-
     pub fn getInfo(self: Adapter) AdapterInfo {
         var info = AdapterInfo{};
         cdef.wgpuAdapterGetInfo(self, &info);
         return info;
     }
-
     pub fn hasFeature(self: Adapter, feature: FeatureName) bool {
         return cdef.wgpuAdapterHasFeature(self, feature) == .true;
     }
-
-    pub fn requestDevice(self: Adapter, descriptor: ?DeviceDescriptor, callback: AdapterRequestDeviceCallback, userdata: ?*anyopaque) void {
+    pub fn requestDeviceAsync(self: Adapter, descriptor: ?DeviceDescriptor, callback: AdapterRequestDeviceCallback, userdata: ?*anyopaque) void {
         cdef.wgpuAdapterRequestDevice(self, if (descriptor) |d| &d else null, callback, userdata);
     }
 
+    pub const requestDevice = wgpu.adapterRequestDevice;
     pub const reference = cdef.wgpuAdapterReference;
     pub const release = cdef.wgpuAdapterRelease;
 };
@@ -1841,7 +1898,7 @@ pub const Device = *opaque {
     pub const getProcAddress = cdef.wgpuGetProcAddress;
 
     // wgpu-native extras (wgpu.h)
-    pub fn wgpuDevicePoll(self: Device, wait: bool, wrappedSubmissionIndex: ?wgpu.WrappedSubmissionIndex) bool {
+    pub fn wgpuDevicePoll(self: Device, wait: bool, wrappedSubmissionIndex: ?native.WrappedSubmissionIndex) bool {
         return cdef.wgpuDevicePoll(self, if (wait) .true else .false, if (wrappedSubmissionIndex) |i| &i else null) == .true;
     }
 };
@@ -1853,20 +1910,21 @@ pub const Instance = *opaque {
     pub fn hasWGSLLanguageFeature(self: Instance, feature: WGSLFeatureName) bool {
         return cdef.wgpuInstanceHasWGSLLanguageFeature(self, feature) == .true;
     }
-    pub fn requestAdapter(self: Instance, options: ?RequestAdapterOptions, callback: InstanceRequestAdapterCallback, userdata: ?*anyopaque) void {
+    pub fn requestAdapterAsync(self: Instance, options: ?RequestAdapterOptions, callback: InstanceRequestAdapterCallback, userdata: ?*anyopaque) void {
         cdef.wgpuInstanceRequestAdapter(self, if (options) |o| &o else null, callback, userdata);
     }
+    pub const requestAdapter = wgpu.instanceRequestAdapter;
     pub const processEvents = cdef.wgpuInstanceProcessEvents;
     pub const reference = cdef.wgpuInstanceReference;
     pub const release = cdef.wgpuInstanceRelease;
 
     // wgpu-native extras (wgpu.h)
-    pub fn generateReport(self: Instance) wgpu.GlobalReport {
-        var report = wgpu.GlobalReport{};
+    pub fn generateReport(self: Instance) native.GlobalReport {
+        var report = native.GlobalReport{};
         cdef.wgpuGenerateReport(self, &report);
         return report;
     }
-    pub fn enumerateAdapters(self: Instance, alloc: Allocator, options: ?wgpu.InstanceEnumerateAdapterOptions) []Adapter {
+    pub fn enumerateAdapters(self: Instance, alloc: Allocator, options: ?native.InstanceEnumerateAdapterOptions) []Adapter {
         const count = cdef.wgpuInstanceEnumerateAdapters(self, if (options) |o| &o else null, null);
         const adapters = try alloc.alloc(Adapter, count);
         _ = cdef.wgpuInstanceEnumerateAdapters(self, if (options) |o| &o else null, @ptrCast(adapters));
@@ -1905,7 +1963,7 @@ pub const Queue = *opaque {
     pub const release = cdef.wgpuQueueRelease;
 
     // wgpu-native extras (wgpu.h)
-    pub fn submitForIndex(self: Queue, commands: []const CommandBuffer) wgpu.SubmissionIndex {
+    pub fn submitForIndex(self: Queue, commands: []const CommandBuffer) native.SubmissionIndex {
         return cdef.wgpuQueueSubmitForIndex(self, commands.len, commands.ptr);
     }
 };
@@ -2046,7 +2104,7 @@ pub const TextureView = *opaque {
     pub const release = cdef.wgpuTextureViewRelease;
 };
 
-pub const wgpu_native = struct {
+pub const native = struct {
     pub const LogLevel = enum(u32) {
         off = 0,
         @"error",
