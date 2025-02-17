@@ -20,6 +20,7 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
+// TODO: Add non-method api
 // TODO: Add default values
 // TODO: I think emscripten has different values for enums, maybe even different structs
 // TODO: wasm and cross compilation support
@@ -31,6 +32,16 @@ const Allocator = std.mem.Allocator;
 test {
     _ = std.testing.refAllDeclsRecursive(@This());
 }
+
+pub const array_layer_count_undefined = 0xffffffff;
+pub const copy_stride_undefined = 0xffffffff;
+pub const depth_slice_undefined = 0xffffffff;
+pub const limit_u32_undefined = 0xffffffff;
+pub const limit_u64_undefined = 0xffffffffffffffff;
+pub const mip_level_count_undefined = 0xffffffff;
+pub const query_set_index_undefined = 0xffffffff;
+pub const whole_map_size = std.math.maxInt(usize);
+pub const whole_size = 0xffffffffffffffff;
 
 pub const Bool = enum(u32) {
     false = 0,
@@ -731,8 +742,12 @@ pub const Color = extern struct {
     r: f64 = 0,
     g: f64 = 0,
     b: f64 = 0,
-    a: f64 = 0,
+    a: f64 = 1,
 };
+
+pub fn color(r: f64, g: f64, b: f64, a: f64) Color {
+    return Color{ .r = r, .g = g, .b = b, .a = a };
+}
 
 pub const CommandBufferDescriptor = extern struct {
     next_in_chain: ?*const ChainedStruct = null,
@@ -1014,14 +1029,14 @@ pub const SurfaceCapabilities = extern struct {
     alpha_mode_count: usize = 0,
     _alpha_modes: [*]const CompositeAlphaMode = undefined,
 
-    pub fn formats(self: SurfaceCapabilities) []TextureFormat {
-        return self.formats_[0..self.format_count];
+    pub fn formats(self: SurfaceCapabilities) []const TextureFormat {
+        return self._formats[0..self.format_count];
     }
-    pub fn present_modes(self: SurfaceCapabilities) []PresentMode {
-        return self.present_modes_[0..self.present_mode_count];
+    pub fn present_modes(self: SurfaceCapabilities) []const PresentMode {
+        return self._present_modes[0..self.present_mode_count];
     }
-    pub fn alpha_modes(self: SurfaceCapabilities) []CompositeAlphaMode {
-        return self.alpha_modes_[0..self.alpha_mode_count];
+    pub fn alpha_modes(self: SurfaceCapabilities) []const CompositeAlphaMode {
+        return self._alpha_modes[0..self.alpha_mode_count];
     }
     pub const freeMembers = cdef.wgpuSurfaceCapabilitiesFreeMembers;
 };
@@ -1409,11 +1424,11 @@ fn defaultDeviceLostCallback(
 pub const RenderPassDescriptor = extern struct {
     next_in_chain: ?*const ChainedStruct = null,
     label: ?[*:0]const u8 = null,
-    color_attachment_count: usize = 0,
-    color_attachments: [*]const RenderPassColorAttachment = undefined,
-    depth_stencil_attachment: *const RenderPassDepthStencilAttachment,
-    occlusion_query_set: QuerySet,
-    timestamp_writes: *const RenderPassTimestampWrites,
+    color_attachment_count: usize,
+    color_attachments: [*]const RenderPassColorAttachment,
+    depth_stencil_attachment: ?*const RenderPassDepthStencilAttachment = null,
+    occlusion_query_set: ?QuerySet = null,
+    timestamp_writes: ?*const RenderPassTimestampWrites = null,
 };
 
 pub const VertexState = extern struct {
@@ -2004,8 +2019,8 @@ pub const RenderPassEncoder = *opaque {
     pub fn setBindGroup(self: RenderPassEncoder, groupIndex: u32, group: ?BindGroup, dynamicOffsets: []const u32) void {
         cdef.wgpuRenderPassEncoderSetBindGroup(self, groupIndex, group, dynamicOffsets.len, dynamicOffsets.ptr);
     }
-    pub fn setBlendConstant(self: RenderPassEncoder, color: Color) void {
-        cdef.wgpuRenderPassEncoderSetBlendConstant(self, &color);
+    pub fn setBlendConstant(self: RenderPassEncoder, color_: Color) void {
+        cdef.wgpuRenderPassEncoderSetBlendConstant(self, &color_);
     }
     pub const beginOcclusionQuery = cdef.wgpuRenderPassEncoderBeginOcclusionQuery;
     pub const draw = cdef.wgpuRenderPassEncoderDraw;
