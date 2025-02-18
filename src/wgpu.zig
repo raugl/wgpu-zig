@@ -20,7 +20,6 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
-// TODO: Add non-method api
 // TODO: Add default values
 // TODO: I think emscripten has different values for enums, maybe even different structs
 // TODO: wasm and cross compilation support
@@ -704,7 +703,7 @@ pub const AdapterInfo = extern struct {
     vendor_id: u32 = 0,
     device_id: u32 = 0,
 
-    pub const freeMembers = cdef.wgpuAdapterInfoFreeMembers;
+    pub const freeMembers = wgpu.adapterInfoFreeMembers;
 };
 
 pub const BindGroupEntry = extern struct {
@@ -883,7 +882,7 @@ pub const RequestAdapterResponse = struct {
 pub const RequestDeviceResponse = struct {
     status: RequestDeviceStatus,
     message: [*:0]const u8,
-    adapter: Device,
+    device: Device,
 };
 
 pub const RenderBundleDescriptor = extern struct {
@@ -1038,7 +1037,7 @@ pub const SurfaceCapabilities = extern struct {
     pub fn alpha_modes(self: SurfaceCapabilities) []const CompositeAlphaMode {
         return self._alpha_modes[0..self.alpha_mode_count];
     }
-    pub const freeMembers = cdef.wgpuSurfaceCapabilitiesFreeMembers;
+    pub const freeMembers = wgpu.surfaceCapabilitiesFreeMembers;
 };
 
 pub const SurfaceConfiguration = extern struct {
@@ -1472,7 +1471,7 @@ const cdef = struct {
     pub extern fn wgpuAdapterRequestDevice(adapter: Adapter, descriptor: ?*const DeviceDescriptor, callback: AdapterRequestDeviceCallback, userdata: ?*anyopaque) void;
     pub extern fn wgpuAdapterReference(adapter: Adapter) void;
     pub extern fn wgpuAdapterRelease(adapter: Adapter) void;
-    pub extern fn wgpuAdapterInfoFreeMembers(self: AdapterInfo) void;
+    pub extern fn wgpuAdapterInfoFreeMembers(info: AdapterInfo) void;
     pub extern fn wgpuBindGroupSetLabel(bindGroup: BindGroup, label: [*:0]const u8) void;
     pub extern fn wgpuBindGroupReference(bindGroup: BindGroup) void;
     pub extern fn wgpuBindGroupRelease(bindGroup: BindGroup) void;
@@ -1648,12 +1647,12 @@ const cdef = struct {
     pub extern fn wgpuTextureViewRelease(textureView: TextureView) void;
 
     // wgpu-native extras (wgpu.h)
-    pub extern fn wgpuGenerateReport(instance: Instance, report: *native.GlobalReport) void;
-    pub extern fn wgpuInstanceEnumerateAdapters(instance: Instance, options: ?*const native.InstanceEnumerateAdapterOptions, adapters: ?[*]Adapter) usize;
-    pub extern fn wgpuQueueSubmitForIndex(queue: Queue, commandCount: usize, commands: [*]const CommandBuffer) native.SubmissionIndex;
-    pub extern fn wgpuDevicePoll(device: Device, wait: Bool, wrappedSubmissionIndex: ?*const native.WrappedSubmissionIndex) Bool;
-    pub extern fn wgpuSetLogCallback(callback: native.LogCallback, userdata: ?*anyopaque) void;
-    pub extern fn wgpuSetLogLevel(level: native.LogLevel) void;
+    pub extern fn wgpuGenerateReport(instance: Instance, report: *GlobalReport) void;
+    pub extern fn wgpuInstanceEnumerateAdapters(instance: Instance, options: ?*const InstanceEnumerateAdapterOptions, adapters: ?[*]Adapter) usize;
+    pub extern fn wgpuQueueSubmitForIndex(queue: Queue, commandCount: usize, commands: [*]const CommandBuffer) SubmissionIndex;
+    pub extern fn wgpuDevicePoll(device: Device, wait: Bool, wrappedSubmissionIndex: ?*const WrappedSubmissionIndex) Bool;
+    pub extern fn wgpuSetLogCallback(callback: LogCallback, userdata: ?*anyopaque) void;
+    pub extern fn wgpuSetLogLevel(level: LogLevel) void;
     pub extern fn wgpuGetVersion() u32;
     pub extern fn wgpuRenderPassEncoderSetPushConstants(encoder: RenderPassEncoder, stages: ShaderStageFlags, offset: u32, sizeBytes: u32, data: [*]const u8) void;
     pub extern fn wgpuRenderPassEncoderMultiDrawIndirect(encoder: RenderPassEncoder, buffer: Buffer, offset: u64, count: u32) void;
@@ -1682,22 +1681,52 @@ fn defaultAdapterCallback(
 
 pub fn instanceRequestAdapter(instance: Instance, options: ?RequestAdapterOptions) error{ Unavailable, Error, Unknown }!Adapter {
     var response: RequestAdapterResponse = undefined;
-    instance.requestAdapter(options, defaultAdapterCallback, &response);
+    instance.requestAdapterAsync(options, defaultAdapterCallback, &response);
 
     if (response.status != .success) {
         std.log.err("WebGPU error: {s} {s}", .{ @tagName(response.status), response.message });
         return switch (response.status) {
+            .success => unreachable,
             .@"error" => error.Error,
             .unknown => error.Unknown,
             .unavailable => error.Unavailable,
         };
     }
-    return response;
+    return response.adapter;
+}
+
+pub fn adapterEnumerateFeatures(adapter: Adapter, alloc: Allocator) Allocator.Error![]FeatureName {
+    const count = cdef.wgpuAdapterEnumerateFeatures(adapter, null);
+    const features = try alloc.alloc(FeatureName, count);
+    _ = cdef.wgpuAdapterEnumerateFeatures(adapter, @ptrCast(features));
+    return features;
+}
+
+pub fn adapterGetLimits(adapter: Adapter) ?SupportedLimits {
+    var limits = SupportedLimits{};
+    if (cdef.wgpuAdapterGetLimits(adapter, &limits) == .true) {
+        return limits;
+    }
+    return null;
+}
+
+pub fn adapterGetInfo(adapter: Adapter) AdapterInfo {
+    var info = AdapterInfo{};
+    cdef.wgpuAdapterGetInfo(adapter, &info);
+    return info;
+}
+
+pub fn adapterHasFeature(adapter: Adapter, feature: FeatureName) bool {
+    return cdef.wgpuAdapterHasFeature(adapter, feature) == .true;
+}
+
+pub fn adapterRequestDeviceAsync(adapter: Adapter, descriptor: ?DeviceDescriptor, callback: AdapterRequestDeviceCallback, userdata: ?*anyopaque) void {
+    cdef.wgpuAdapterRequestDevice(adapter, if (descriptor) |d| &d else null, callback, userdata);
 }
 
 fn defaultDeviceCallback(
     status: RequestDeviceStatus,
-    device: Adapter,
+    device: Device,
     message: [*:0]const u8,
     userdata: ?*anyopaque,
 ) callconv(.C) void {
@@ -1707,625 +1736,832 @@ fn defaultDeviceCallback(
 
 pub fn adapterRequestDevice(adapter: Adapter, descriptor: ?DeviceDescriptor) error{ Error, Unknown }!Device {
     var response: RequestDeviceResponse = undefined;
-    adapter.requestDevice(descriptor, defaultDeviceCallback, &response);
+    adapter.requestDeviceAsync(descriptor, defaultDeviceCallback, &response);
 
     if (response.status != .success) {
         std.log.err("WebGPU error: {s} {s}", .{ @tagName(response.status), response.message });
         return switch (response.status) {
+            .success => unreachable,
             .@"error" => error.Error,
             .unknown => error.Unknown,
         };
     }
-    return response;
+    return response.device;
 }
 
-pub const Adapter = *opaque {
-    pub fn enumerateFeatures(self: Adapter, alloc: Allocator) Allocator.Error![]FeatureName {
-        const count = cdef.wgpuAdapterEnumerateFeatures(self, null);
-        const features = try alloc.alloc(FeatureName, count);
-        _ = cdef.wgpuAdapterEnumerateFeatures(self, @ptrCast(features));
-        return features;
-    }
-    pub fn getLimits(self: Adapter) ?SupportedLimits {
-        var limits = SupportedLimits{};
-        if (cdef.wgpuAdapterGetLimits(self, &limits) == .true) {
-            return limits;
-        }
-        return null;
-    }
-    pub fn getInfo(self: Adapter) AdapterInfo {
-        var info = AdapterInfo{};
-        cdef.wgpuAdapterGetInfo(self, &info);
-        return info;
-    }
-    pub fn hasFeature(self: Adapter, feature: FeatureName) bool {
-        return cdef.wgpuAdapterHasFeature(self, feature) == .true;
-    }
-    pub fn requestDeviceAsync(self: Adapter, descriptor: ?DeviceDescriptor, callback: AdapterRequestDeviceCallback, userdata: ?*anyopaque) void {
-        cdef.wgpuAdapterRequestDevice(self, if (descriptor) |d| &d else null, callback, userdata);
-    }
+pub fn bufferGetConstMappedRange(buffer: Buffer, offset: usize, size: usize) []const u8 {
+    return cdef.wgpuBufferGetConstMappedRange(buffer, offset, size)[0..size];
+}
 
+pub fn bufferGetMappedRange(buffer: Buffer, offset: usize, size: usize) []u8 {
+    return cdef.wgpuBufferGetMappedRange(buffer, offset, size)[0..size];
+}
+
+pub fn commandEncoderBeginComputePass(encoder: CommandEncoder, descriptor: ?ComputePassDescriptor) ComputePassEncoder {
+    return cdef.wgpuCommandEncoderBeginComputePass(encoder, if (descriptor) |d| &d else null);
+}
+
+pub fn commandEncoderBeginRenderPass(encoder: CommandEncoder, descriptor: RenderPassDescriptor) RenderPassEncoder {
+    return cdef.wgpuCommandEncoderBeginRenderPass(encoder, &descriptor);
+}
+
+pub fn commandEncoderCopyBufferToTexture(encoder: CommandEncoder, source: ImageCopyBuffer, destination: ImageCopyTexture, copySize: Extent3D) void {
+    cdef.wgpuCommandEncoderCopyBufferToTexture(encoder, &source, &destination, &copySize);
+}
+
+pub fn commandEncoderCopyTextureToBuffer(encoder: CommandEncoder, source: ImageCopyTexture, destination: ImageCopyBuffer, copySize: Extent3D) void {
+    cdef.wgpuCommandEncoderCopyTextureToBuffer(encoder, &source, &destination, &copySize);
+}
+
+pub fn commandEncoderCopyTextureToTexture(encoder: CommandEncoder, source: ImageCopyTexture, destination: ImageCopyTexture, copySize: Extent3D) void {
+    cdef.wgpuCommandEncoderCopyTextureToTexture(encoder, &source, &destination, &copySize);
+}
+
+pub fn commandEncoderFinish(encoder: CommandEncoder, descriptor: ?CommandBufferDescriptor) CommandBuffer {
+    return cdef.wgpuCommandEncoderFinish(encoder, if (descriptor) |d| &d else null);
+}
+
+pub fn deviceCreateBindGroup(device: Device, descriptor: BindGroupDescriptor) BindGroup {
+    return cdef.wgpuDeviceCreateBindGroup(device, &descriptor);
+}
+
+pub fn deviceCreateBindGroupLayout(device: Device, descriptor: BindGroupLayoutDescriptor) BindGroupLayout {
+    return cdef.wgpuDeviceCreateBindGroupLayout(device, &descriptor);
+}
+
+pub fn deviceCreateBuffer(device: Device, descriptor: BufferDescriptor) Buffer {
+    return cdef.wgpuDeviceCreateBuffer(device, &descriptor);
+}
+
+pub fn deviceCreateCommandEncoder(device: Device, descriptor: ?CommandEncoderDescriptor) CommandEncoder {
+    return cdef.wgpuDeviceCreateCommandEncoder(device, if (descriptor) |d| &d else null);
+}
+
+pub fn deviceCreateComputePipeline(device: Device, descriptor: ComputePipelineDescriptor) ComputePipeline {
+    return cdef.wgpuDeviceCreateComputePipeline(device, &descriptor);
+}
+
+pub fn deviceCreateComputePipelineAsync(device: Device, descriptor: ComputePipelineDescriptor, callback: DeviceCreateComputePipelineAsyncCallback, userdata: ?*anyopaque) void {
+    return cdef.wgpuDeviceCreateComputePipelineAsync(device, &descriptor, callback, userdata);
+}
+
+pub fn deviceCreatePipelineLayout(device: Device, descriptor: PipelineLayoutDescriptor) PipelineLayout {
+    return cdef.wgpuDeviceCreatePipelineLayout(device, &descriptor);
+}
+
+pub fn deviceCreateQuerySet(device: Device, descriptor: QuerySetDescriptor) QuerySet {
+    return cdef.wgpuDeviceCreateQuerySet(device, &descriptor);
+}
+
+pub fn deviceCreateRenderBundleEncoder(device: Device, descriptor: RenderBundleEncoderDescriptor) RenderBundleEncoder {
+    return cdef.wgpuDeviceCreateRenderBundleEncoder(device, &descriptor);
+}
+
+pub fn deviceCreateRenderPipeline(device: Device, descriptor: RenderPipelineDescriptor) RenderPipeline {
+    return cdef.wgpuDeviceCreateRenderPipeline(device, &descriptor);
+}
+
+pub fn deviceCreateRenderPipelineAsync(device: Device, descriptor: RenderPipelineDescriptor, callback: DeviceCreateRenderPipelineAsyncCallback, userdata: ?*anyopaque) void {
+    return cdef.wgpuDeviceCreateRenderPipelineAsync(device, &descriptor, callback, userdata);
+}
+
+pub fn deviceCreateSampler(device: Device, descriptor: ?SamplerDescriptor) Sampler {
+    return cdef.wgpuDeviceCreateSampler(device, if (descriptor) |d| &d else null);
+}
+
+pub fn deviceCreateShaderModule(device: Device, descriptor: ShaderModuleDescriptor) ShaderModule {
+    return cdef.wgpuDeviceCreateShaderModule(device, &descriptor);
+}
+
+pub fn deviceCreateTexture(device: Device, descriptor: TextureDescriptor) Texture {
+    return cdef.wgpuDeviceCreateTexture(device, &descriptor);
+}
+
+pub fn deviceDestroy(device: Device) void {
+    cdef.wgpuDeviceDestroy(device);
+}
+
+pub fn deviceEnumerateFeatures(device: Device, alloc: Allocator) Allocator.Error![]FeatureName {
+    const count = cdef.wgpuDeviceEnumerateFeatures(device, null);
+    const features = try alloc.alloc(FeatureName, count);
+    _ = cdef.wgpuDeviceEnumerateFeatures(device, @ptrCast(features));
+    return features;
+}
+
+pub fn deviceGetLimits(device: Device) ?SupportedLimits {
+    var limits = SupportedLimits{};
+    if (cdef.wgpuDeviceGetLimits(device, &limits) == .true) {
+        return limits;
+    }
+    return null;
+}
+
+pub fn deviceHasFeature(device: Device, feature: FeatureName) bool {
+    return cdef.wgpuDeviceHasFeature(device, feature) != .false;
+}
+
+pub fn instanceCreateSurface(instance: Instance, descriptor: SurfaceDescriptor) Surface {
+    return cdef.wgpuInstanceCreateSurface(instance, &descriptor);
+}
+
+pub fn instanceHasWGSLLanguageFeature(instance: Instance, feature: WGSLFeatureName) bool {
+    return cdef.wgpuInstanceHasWGSLLanguageFeature(instance, feature) == .true;
+}
+
+pub fn instanceRequestAdapterAsync(instance: Instance, options: ?RequestAdapterOptions, callback: InstanceRequestAdapterCallback, userdata: ?*anyopaque) void {
+    cdef.wgpuInstanceRequestAdapter(instance, if (options) |o| &o else null, callback, userdata);
+}
+
+pub fn queueSubmit(queue: Queue, commands: []const CommandBuffer) void {
+    cdef.wgpuQueueSubmit(queue, commands.len, commands.ptr);
+}
+
+pub fn queueWriteBuffer(queue: Queue, buffer: Buffer, bufferOffset: u64, data: []const u8) void {
+    cdef.wgpuQueueWriteBuffer(queue, buffer, bufferOffset, data.ptr, data.len);
+}
+
+pub fn queueWriteTexture(queue: Queue, destination: ImageCopyTexture, data: []const u8, dataLayout: TextureDataLayout, writeSize: Extent3D) void {
+    cdef.wgpuQueueWriteTexture(queue, &destination, data.ptr, data.len, &dataLayout, &writeSize);
+}
+
+pub fn renderBundleEncoderFinish(encoder: RenderBundleEncoder, descriptor: ?RenderBundleDescriptor) RenderBundle {
+    return cdef.wgpuRenderBundleEncoderFinish(encoder, if (descriptor) |d| &d else null);
+}
+
+pub fn renderBundleEncoderSetBindGroup(encoder: RenderBundleEncoder, groupIndex: u32, group: ?BindGroup, dynamicOffsets: []const u32) void {
+    cdef.wgpuRenderBundleEncoderSetBindGroup(encoder, groupIndex, group, dynamicOffsets.len, dynamicOffsets.ptr);
+}
+
+pub fn renderPassExecuteBundles(encoder: RenderPassEncoder, bundles: []const RenderBundle) void {
+    cdef.wgpuRenderPassEncoderExecuteBundles(encoder, bundles.len, bundles.ptr);
+}
+
+pub fn renderPassSetBindGroup(encoder: RenderPassEncoder, groupIndex: u32, group: ?BindGroup, dynamicOffsets: []const u32) void {
+    cdef.wgpuRenderPassEncoderSetBindGroup(encoder, groupIndex, group, dynamicOffsets.len, dynamicOffsets.ptr);
+}
+
+pub fn renderPassSetBlendConstant(encoder: RenderPassEncoder, color_: Color) void {
+    cdef.wgpuRenderPassEncoderSetBlendConstant(encoder, &color_);
+}
+
+pub fn surfaceConfigure(surface: Surface, config: SurfaceConfiguration) void {
+    cdef.wgpuSurfaceConfigure(surface, &config);
+}
+
+pub fn surfaceGetCapabilities(surface: Surface, adapter: Adapter) SurfaceCapabilities {
+    var capabilities = SurfaceCapabilities{};
+    cdef.wgpuSurfaceGetCapabilities(surface, adapter, &capabilities);
+    return capabilities;
+}
+
+pub fn surfaceGetCurrentTexture(surface: Surface) SurfaceTexture {
+    var texture = SurfaceTexture{};
+    cdef.wgpuSurfaceGetCurrentTexture(surface, &texture);
+    return texture;
+}
+
+pub fn textureCreateView(texture: Texture, descriptor: ?TextureViewDescriptor) TextureView {
+    return cdef.wgpuTextureCreateView(texture, if (descriptor) |d| &d else null);
+}
+
+pub fn devicePoll(device: Device, wait: bool, wrappedSubmissionIndex: ?WrappedSubmissionIndex) bool {
+    return cdef.wgpuDevicePoll(device, if (wait) .true else .false, if (wrappedSubmissionIndex) |i| &i else null) == .true;
+}
+
+pub fn generateReport(instance: Instance) GlobalReport {
+    var report = GlobalReport{};
+    cdef.wgpuGenerateReport(instance, &report);
+    return report;
+}
+
+pub fn instanceEnumerateAdapters(instance: Instance, alloc: Allocator, options: ?InstanceEnumerateAdapterOptions) []Adapter {
+    const count = cdef.wgpuInstanceEnumerateAdapters(instance, if (options) |o| &o else null, null);
+    const adapters = try alloc.alloc(Adapter, count);
+    _ = cdef.wgpuInstanceEnumerateAdapters(instance, if (options) |o| &o else null, @ptrCast(adapters));
+    return adapters;
+}
+
+pub fn queueSubmitForIndex(queue: Queue, commands: []const CommandBuffer) SubmissionIndex {
+    return cdef.wgpuQueueSubmitForIndex(queue, commands.len, commands.ptr);
+}
+
+pub fn renderPassSetPushConstants(encoder: RenderPassEncoder, stages: ShaderStageFlags, offset: u32, data: []const u8) void {
+    cdef.wgpuRenderPassEncoderSetPushConstants(encoder, stages, offset, @intCast(data.len), data.ptr);
+}
+
+pub const adapterInfoFreeMembers = cdef.wgpuAdapterInfoFreeMembers;
+pub const adapterReference = cdef.wgpuAdapterReference;
+pub const adapterRelease = cdef.wgpuAdapterRelease;
+pub const bindGroupLayoutReference = cdef.wgpuBindGroupLayoutReference;
+pub const bindGroupLayoutRelease = cdef.wgpuBindGroupLayoutRelease;
+pub const bindGroupLayoutSetLabel = cdef.wgpuBindGroupLayoutSetLabel;
+pub const bindGroupReference = cdef.wgpuBindGroupReference;
+pub const bindGroupRelease = cdef.wgpuBindGroupRelease;
+pub const bindGroupSetLabel = cdef.wgpuBindGroupSetLabel;
+pub const bufferDestroy = cdef.wgpuBufferDestroy;
+pub const bufferGetMapState = cdef.wgpuBufferGetMapState;
+pub const bufferGetSize = cdef.wgpuBufferGetSize;
+pub const bufferGetUsage = cdef.wgpuBufferGetUsage;
+pub const bufferMapAsync = cdef.wgpuBufferMapAsync;
+pub const bufferReference = cdef.wgpuBufferReference;
+pub const bufferRelease = cdef.wgpuBufferRelease;
+pub const bufferSetLabel = cdef.wgpuBufferSetLabel;
+pub const bufferUnmap = cdef.wgpuBufferUnmap;
+pub const commandBufferReference = cdef.wgpuCommandBufferReference;
+pub const commandBufferRelease = cdef.wgpuCommandBufferRelease;
+pub const commandBufferSetLabel = cdef.wgpuCommandBufferSetLabel;
+pub const commandEncoderCopyBufferToBuffer = cdef.wgpuCommandEncoderCopyBufferToBuffer;
+pub const commandEncoderInsertDebugMarker = cdef.wgpuCommandEncoderInsertDebugMarker;
+pub const commandEncoderPopDebugGroup = cdef.wgpuCommandEncoderPopDebugGroup;
+pub const commandEncoderPushDebugGroup = cdef.wgpuCommandEncoderPushDebugGroup;
+pub const commandEncoderReference = cdef.wgpuCommandEncoderReference;
+pub const commandEncoderRelease = cdef.wgpuCommandEncoderRelease;
+pub const commandEncoderResolveQuerySet = cdef.wgpuCommandEncoderResolveQuerySet;
+pub const commandEncoderSetLabel = cdef.wgpuCommandEncoderSetLabel;
+pub const commandEncoderWriteTimestamp = cdef.wgpuCommandEncoderWriteTimestamp;
+pub const computePassDispatchWorkgroups = cdef.wgpuComputePassEncoderDispatchWorkgroups;
+pub const computePassDispatchWorkgroupsIndirect = cdef.wgpuComputePassEncoderDispatchWorkgroupsIndirect;
+pub const computePassEnd = cdef.wgpuComputePassEncoderEnd;
+pub const computePassInsertDebugMarker = cdef.wgpuComputePassEncoderInsertDebugMarker;
+pub const computePassPopDebugGroup = cdef.wgpuComputePassEncoderPopDebugGroup;
+pub const computePassPushDebugGroup = cdef.wgpuComputePassEncoderPushDebugGroup;
+pub const computePassReference = cdef.wgpuComputePassEncoderReference;
+pub const computePassRelease = cdef.wgpuComputePassEncoderRelease;
+pub const computePassSetBindGroup = cdef.wgpuComputePassEncoderSetBindGroup;
+pub const computePassSetLabel = cdef.wgpuComputePassEncoderSetLabel;
+pub const computePassSetPipeline = cdef.wgpuComputePassEncoderSetPipeline;
+pub const computePipelineGetBindGroupLayout = cdef.wgpuComputePipelineGetBindGroupLayout;
+pub const computePipelineReference = cdef.wgpuComputePipelineReference;
+pub const computePipelineRelease = cdef.wgpuComputePipelineRelease;
+pub const computePipelineSetLabel = cdef.wgpuComputePipelineSetLabel;
+pub const deviceGetQueue = cdef.wgpuDeviceGetQueue;
+pub const devicePopErrorScope = cdef.wgpuDevicePopErrorScope;
+pub const devicePushErrorScope = cdef.wgpuDevicePushErrorScope;
+pub const deviceReference = cdef.wgpuDeviceReference;
+pub const deviceRelease = cdef.wgpuDeviceRelease;
+pub const deviceSetLabel = cdef.wgpuDeviceSetLabel;
+pub const getProcAddress = cdef.wgpuGetProcAddress;
+pub const instanceProcessEvents = cdef.wgpuInstanceProcessEvents;
+pub const instanceReference = cdef.wgpuInstanceReference;
+pub const instanceRelease = cdef.wgpuInstanceRelease;
+pub const pipelineLayoutReference = cdef.wgpuPipelineLayoutReference;
+pub const pipelineLayoutRelease = cdef.wgpuPipelineLayoutRelease;
+pub const pipelineLayoutSetLabel = cdef.wgpuPipelineLayoutSetLabel;
+pub const querySetDestroy = cdef.wgpuQuerySetDestroy;
+pub const querySetGetCount = cdef.wgpuQuerySetGetCount;
+pub const querySetGetType = cdef.wgpuQuerySetGetType;
+pub const querySetReference = cdef.wgpuQuerySetReference;
+pub const querySetRelease = cdef.wgpuQuerySetRelease;
+pub const querySetSetLabel = cdef.wgpuQuerySetSetLabel;
+pub const queueOnSubmittedWorkDone = cdef.wgpuQueueOnSubmittedWorkDone;
+pub const queueReference = cdef.wgpuQueueReference;
+pub const queueRelease = cdef.wgpuQueueRelease;
+pub const queueSetLabel = cdef.wgpuQueueSetLabel;
+pub const renderBundleEncoderDraw = cdef.wgpuRenderBundleEncoderDraw;
+pub const renderBundleEncoderDrawIndexed = cdef.wgpuRenderBundleEncoderDrawIndexed;
+pub const renderBundleEncoderDrawIndexedIndirect = cdef.wgpuRenderBundleEncoderDrawIndexedIndirect;
+pub const renderBundleEncoderDrawIndirect = cdef.wgpuRenderBundleEncoderDrawIndirect;
+pub const renderBundleEncoderInsertDebugMarker = cdef.wgpuRenderBundleEncoderInsertDebugMarker;
+pub const renderBundleEncoderPopDebugGroup = cdef.wgpuRenderBundleEncoderPopDebugGroup;
+pub const renderBundleEncoderPushDebugGroup = cdef.wgpuRenderBundleEncoderPushDebugGroup;
+pub const renderBundleEncoderReference = cdef.wgpuRenderBundleEncoderReference;
+pub const renderBundleEncoderRelease = cdef.wgpuRenderBundleEncoderRelease;
+pub const renderBundleEncoderSetIndexBuffer = cdef.wgpuRenderBundleEncoderSetIndexBuffer;
+pub const renderBundleEncoderSetLabel = cdef.wgpuRenderBundleEncoderSetLabel;
+pub const renderBundleEncoderSetPipeline = cdef.wgpuRenderBundleEncoderSetPipeline;
+pub const renderBundleEncoderSetVertexBuffer = cdef.wgpuRenderBundleEncoderSetVertexBuffer;
+pub const renderBundleReference = cdef.wgpuRenderBundleReference;
+pub const renderBundleRelease = cdef.wgpuRenderBundleRelease;
+pub const renderBundleSetLabel = cdef.wgpuRenderBundleSetLabel;
+pub const renderPassBeginOcclusionQuery = cdef.wgpuRenderPassEncoderBeginOcclusionQuery;
+pub const renderPassDraw = cdef.wgpuRenderPassEncoderDraw;
+pub const renderPassDrawIndexed = cdef.wgpuRenderPassEncoderDrawIndexed;
+pub const renderPassDrawIndexedIndirect = cdef.wgpuRenderPassEncoderDrawIndexedIndirect;
+pub const renderPassDrawIndirect = cdef.wgpuRenderPassEncoderDrawIndirect;
+pub const renderPassEnd = cdef.wgpuRenderPassEncoderEnd;
+pub const renderPassEndOcclusionQuery = cdef.wgpuRenderPassEncoderEndOcclusionQuery;
+pub const renderPassInsertDebugMarker = cdef.wgpuRenderPassEncoderInsertDebugMarker;
+pub const renderPassPopDebugGroup = cdef.wgpuRenderPassEncoderPopDebugGroup;
+pub const renderPassPushDebugGroup = cdef.wgpuRenderPassEncoderPushDebugGroup;
+pub const renderPassReference = cdef.wgpuRenderPassEncoderReference;
+pub const renderPassRelease = cdef.wgpuRenderPassEncoderRelease;
+pub const renderPassSetIndexBuffer = cdef.wgpuRenderPassEncoderSetIndexBuffer;
+pub const renderPassSetLabel = cdef.wgpuRenderPassEncoderSetLabel;
+pub const renderPassSetPipeline = cdef.wgpuRenderPassEncoderSetPipeline;
+pub const renderPassSetScissorRect = cdef.wgpuRenderPassEncoderSetScissorRect;
+pub const renderPassSetStencilReference = cdef.wgpuRenderPassEncoderSetStencilReference;
+pub const renderPassSetVertexBuffer = cdef.wgpuRenderPassEncoderSetVertexBuffer;
+pub const renderPassSetViewport = cdef.wgpuRenderPassEncoderSetViewport;
+pub const renderPipelineGetBindGroupLayout = cdef.wgpuRenderPipelineGetBindGroupLayout;
+pub const renderPipelineReference = cdef.wgpuRenderPipelineReference;
+pub const renderPipelineRelease = cdef.wgpuRenderPipelineRelease;
+pub const renderPipelineSetLabel = cdef.wgpuRenderPipelineSetLabel;
+pub const samplerReference = cdef.wgpuSamplerReference;
+pub const samplerRelease = cdef.wgpuSamplerRelease;
+pub const samplerSetLabel = cdef.wgpuSamplerSetLabel;
+pub const shaderModuleGetCompilationInfo = cdef.wgpuShaderModuleGetCompilationInfo;
+pub const shaderModuleReference = cdef.wgpuShaderModuleReference;
+pub const shaderModuleRelease = cdef.wgpuShaderModuleRelease;
+pub const shaderModuleSetLabel = cdef.wgpuShaderModuleSetLabel;
+pub const surfacePresent = cdef.wgpuSurfacePresent;
+pub const surfaceReference = cdef.wgpuSurfaceReference;
+pub const surfaceRelease = cdef.wgpuSurfaceRelease;
+pub const surfaceSetLabel = cdef.wgpuSurfaceSetLabel;
+pub const surfaceUnconfigure = cdef.wgpuSurfaceUnconfigure;
+pub const textureDestroy = cdef.wgpuTextureDestroy;
+pub const textureGetDepthOrArrayLayers = cdef.wgpuTextureGetDepthOrArrayLayers;
+pub const textureGetDimension = cdef.wgpuTextureGetDimension;
+pub const textureGetFormat = cdef.wgpuTextureGetFormat;
+pub const textureGetHeight = cdef.wgpuTextureGetHeight;
+pub const textureGetMipLevelCount = cdef.wgpuTextureGetMipLevelCount;
+pub const textureGetSampleCount = cdef.wgpuTextureGetSampleCount;
+pub const textureGetUsage = cdef.wgpuTextureGetUsage;
+pub const textureGetWidth = cdef.wgpuTextureGetWidth;
+pub const textureReference = cdef.wgpuTextureReference;
+pub const textureRelease = cdef.wgpuTextureRelease;
+pub const textureSetLabel = cdef.wgpuTextureSetLabel;
+pub const textureViewReference = cdef.wgpuTextureViewReference;
+pub const textureViewRelease = cdef.wgpuTextureViewRelease;
+pub const textureViewSetLabel = cdef.wgpuTextureViewSetLabel;
+pub const surfaceCapabilitiesFreeMembers = cdef.wgpuSurfaceCapabilitiesFreeMembers;
+
+// wgpu-native extras (wgpu.h)
+pub const computePassBeginPipelineStatisticsQuery = cdef.wgpuComputePassEncoderBeginPipelineStatisticsQuery;
+pub const computePassEndPipelineStatisticsQuery = cdef.wgpuComputePassEncoderEndPipelineStatisticsQuery;
+pub const setLogCallback = cdef.wgpuSetLogCallback;
+pub const setLogLevel = cdef.wgpuSetLogLevel;
+pub const getVersion = cdef.wgpuGetVersion;
+
+pub const Adapter = *opaque {
+    pub const enumerateFeatures = wgpu.adapterEnumerateFeatures;
+    pub const getInfo = wgpu.adapterGetInfo;
+    pub const getLimits = wgpu.adapterGetLimits;
+    pub const hasFeature = wgpu.adapterHasFeature;
+    pub const reference = wgpu.adapterReference;
+    pub const release = wgpu.adapterRelease;
     pub const requestDevice = wgpu.adapterRequestDevice;
-    pub const reference = cdef.wgpuAdapterReference;
-    pub const release = cdef.wgpuAdapterRelease;
+    pub const requestDeviceAsync = wgpu.adapterRequestDeviceAsync;
 };
 
 pub const BindGroup = *opaque {
-    pub const setLabel = cdef.wgpuBindGroupSetLabel;
-    pub const reference = cdef.wgpuBindGroupReference;
-    pub const release = cdef.wgpuBindGroupRelease;
+    pub const reference = wgpu.bindGroupReference;
+    pub const release = wgpu.bindGroupRelease;
+    pub const setLabel = wgpu.bindGroupSetLabel;
 };
 
 pub const BindGroupLayout = *opaque {
-    pub const setLabel = cdef.wgpuBindGroupLayoutSetLabel;
-    pub const reference = cdef.wgpuBindGroupLayoutReference;
-    pub const release = cdef.wgpuBindGroupLayoutRelease;
+    pub const reference = wgpu.bindGroupLayoutReference;
+    pub const release = wgpu.bindGroupLayoutRelease;
+    pub const setLabel = wgpu.bindGroupLayoutSetLabel;
 };
 
 pub const Buffer = *opaque {
-    pub fn getConstMappedRange(self: Buffer, offset: usize, size: usize) []const u8 {
-        return cdef.wgpuBufferGetConstMappedRange(self, offset, size)[0..size];
-    }
-    pub fn getMappedRange(self: Buffer, offset: usize, size: usize) []u8 {
-        return cdef.wgpuBufferGetMappedRange(self, offset, size)[0..size];
-    }
-    pub const destroy = cdef.wgpuBufferDestroy;
-    pub const getMapState = cdef.wgpuBufferGetMapState;
-    pub const getSize = cdef.wgpuBufferGetSize;
-    pub const getUsage = cdef.wgpuBufferGetUsage;
-    pub const mapAsync = cdef.wgpuBufferMapAsync;
-    pub const setLabel = cdef.wgpuBufferSetLabel;
-    pub const unmap = cdef.wgpuBufferUnmap;
-    pub const reference = cdef.wgpuBufferReference;
-    pub const release = cdef.wgpuBufferRelease;
+    pub const destroy = wgpu.bufferDestroy;
+    pub const getMapState = wgpu.bufferGetMapState;
+    pub const getSize = wgpu.bufferGetSize;
+    pub const getUsage = wgpu.bufferGetUsage;
+    pub const mapAsync = wgpu.bufferMapAsync;
+    pub const reference = wgpu.bufferReference;
+    pub const release = wgpu.bufferRelease;
+    pub const setLabel = wgpu.bufferSetLabel;
+    pub const unmap = wgpu.bufferUnmap;
 };
 
 pub const CommandBuffer = *opaque {
-    pub const setLabel = cdef.wgpuCommandBufferSetLabel;
-    pub const reference = cdef.wgpuCommandBufferReference;
-    pub const release = cdef.wgpuCommandBufferRelease;
+    pub const reference = wgpu.commandBufferReference;
+    pub const release = wgpu.commandBufferRelease;
+    pub const setLabel = wgpu.commandBufferSetLabel;
 };
 
 pub const CommandEncoder = *opaque {
-    pub fn beginComputePass(self: CommandEncoder, descriptor: ?ComputePassDescriptor) ComputePassEncoder {
-        return cdef.wgpuCommandEncoderBeginComputePass(self, if (descriptor) |d| &d else null);
-    }
-    pub fn beginRenderPass(self: CommandEncoder, descriptor: RenderPassDescriptor) RenderPassEncoder {
-        return cdef.wgpuCommandEncoderBeginRenderPass(self, &descriptor);
-    }
-    pub fn copyBufferToTexture(self: CommandEncoder, source: ImageCopyBuffer, destination: ImageCopyTexture, copySize: Extent3D) void {
-        cdef.wgpuCommandEncoderCopyBufferToTexture(self, &source, &destination, &copySize);
-    }
-    pub fn copyTextureToBuffer(self: CommandEncoder, source: ImageCopyTexture, destination: ImageCopyBuffer, copySize: Extent3D) void {
-        cdef.wgpuCommandEncoderCopyTextureToBuffer(self, &source, &destination, &copySize);
-    }
-    pub fn copyTextureToTexture(self: CommandEncoder, source: ImageCopyTexture, destination: ImageCopyTexture, copySize: Extent3D) void {
-        cdef.wgpuCommandEncoderCopyTextureToTexture(self, &source, &destination, &copySize);
-    }
-    pub fn finish(self: CommandEncoder, descriptor: ?CommandBufferDescriptor) CommandBuffer {
-        return cdef.wgpuCommandEncoderFinish(self, if (descriptor) |d| &d else null);
-    }
-    pub const clearBuffer = cdef.wgpuCommandEncoderClearBuffer;
-    pub const copyBufferToBuffer = cdef.wgpuCommandEncoderCopyBufferToBuffer;
-    pub const insertDebugMarker = cdef.wgpuCommandEncoderInsertDebugMarker;
-    pub const popDebugGroup = cdef.wgpuCommandEncoderPopDebugGroup;
-    pub const pushDebugGroup = cdef.wgpuCommandEncoderPushDebugGroup;
-    pub const resolveQuerySet = cdef.wgpuCommandEncoderResolveQuerySet;
-    pub const writeTimestamp = cdef.wgpuCommandEncoderWriteTimestamp;
-    pub const setLabel = cdef.wgpuCommandEncoderSetLabel;
-    pub const reference = cdef.wgpuCommandEncoderReference;
-    pub const release = cdef.wgpuCommandEncoderRelease;
+    pub const beginComputePass = wgpu.commandEncoderBeginComputePass;
+    pub const beginRenderPass = wgpu.commandEncoderBeginRenderPass;
+    pub const copyBufferToBuffer = wgpu.commandEncoderCopyBufferToBuffer;
+    pub const copyBufferToTexture = wgpu.commandEncoderCopyBufferToTexture;
+    pub const copyTextureToBuffer = wgpu.commandEncoderCopyTextureToBuffer;
+    pub const copyTextureToTexture = wgpu.commandEncoderCopyTextureToTexture;
+    pub const finish = wgpu.commandEncoderFinish;
+    pub const insertDebugMarker = wgpu.commandEncoderInsertDebugMarker;
+    pub const popDebugGroup = wgpu.commandEncoderPopDebugGroup;
+    pub const pushDebugGroup = wgpu.commandEncoderPushDebugGroup;
+    pub const reference = wgpu.commandEncoderReference;
+    pub const release = wgpu.commandEncoderRelease;
+    pub const resolveQuerySet = wgpu.commandEncoderResolveQuerySet;
+    pub const setLabel = wgpu.commandEncoderSetLabel;
+    pub const writeTimestamp = wgpu.commandEncoderWriteTimestamp;
 };
 
 pub const ComputePassEncoder = *opaque {
-    pub const dispatchWorkgroups = cdef.wgpuComputePassEncoderDispatchWorkgroups;
-    pub const dispatchWorkgroupsIndirect = cdef.wgpuComputePassEncoderDispatchWorkgroupsIndirect;
-    pub const end = cdef.wgpuComputePassEncoderEnd;
-    pub const insertDebugMarker = cdef.wgpuComputePassEncoderInsertDebugMarker;
-    pub const popDebugGroup = cdef.wgpuComputePassEncoderPopDebugGroup;
-    pub const pushDebugGroup = cdef.wgpuComputePassEncoderPushDebugGroup;
-    pub const setPipeline = cdef.wgpuComputePassEncoderSetPipeline;
-    pub const setBindGroup = cdef.wgpuComputePassEncoderSetBindGroup;
-    pub const setLabel = cdef.wgpuComputePassEncoderSetLabel;
-    pub const reference = cdef.wgpuComputePassEncoderReference;
-    pub const release = cdef.wgpuComputePassEncoderRelease;
+    pub const dispatchWorkgroups = wgpu.computePassDispatchWorkgroups;
+    pub const dispatchWorkgroupsIndirect = wgpu.computePassDispatchWorkgroupsIndirect;
+    pub const end = wgpu.computePassEnd;
+    pub const insertDebugMarker = wgpu.computePassInsertDebugMarker;
+    pub const popDebugGroup = wgpu.computePassPopDebugGroup;
+    pub const pushDebugGroup = wgpu.computePassPushDebugGroup;
+    pub const reference = wgpu.computePassReference;
+    pub const release = wgpu.computePassRelease;
+    pub const setBindGroup = wgpu.computePassSetBindGroup;
+    pub const setLabel = wgpu.computePassSetLabel;
+    pub const setPipeline = wgpu.computePassSetPipeline;
 
     // wgpu-native extras (wgpu.h)
-    pub const beginPipelineStatisticsQuery = cdef.wgpuComputePassEncoderBeginPipelineStatisticsQuery;
-    pub const endPipelineStatisticsQuery = cdef.wgpuComputePassEncoderEndPipelineStatisticsQuery;
+    pub const beginPipelineStatisticsQuery = wgpu.computePassBeginPipelineStatisticsQuery;
+    pub const endPipelineStatisticsQuery = wgpu.computePassEndPipelineStatisticsQuery;
 };
 
 pub const ComputePipeline = *opaque {
-    pub const getBindGroupLayout = cdef.wgpuComputePipelineGetBindGroupLayout;
-    pub const setLabel = cdef.wgpuComputePipelineSetLabel;
-    pub const reference = cdef.wgpuComputePipelineReference;
-    pub const release = cdef.wgpuComputePipelineRelease;
+    pub const getBindGroupLayout = wgpu.computePipelineGetBindGroupLayout;
+    pub const reference = wgpu.computePipelineReference;
+    pub const release = wgpu.computePipelineRelease;
+    pub const setLabel = wgpu.computePipelineSetLabel;
 };
 
 pub const Device = *opaque {
-    pub fn createBindGroup(self: Device, descriptor: BindGroupDescriptor) BindGroup {
-        return cdef.wgpuDeviceCreateBindGroup(self, &descriptor);
-    }
-    pub fn createBindGroupLayout(self: Device, descriptor: BindGroupLayoutDescriptor) BindGroupLayout {
-        return cdef.wgpuDeviceCreateBindGroupLayout(self, &descriptor);
-    }
-    pub fn createBuffer(self: Device, descriptor: BufferDescriptor) Buffer {
-        return cdef.wgpuDeviceCreateBuffer(self, &descriptor);
-    }
-    pub fn createCommandEncoder(self: Device, descriptor: ?CommandEncoderDescriptor) CommandEncoder {
-        return cdef.wgpuDeviceCreateCommandEncoder(self, if (descriptor) |d| &d else null);
-    }
-    pub fn createComputePipeline(self: Device, descriptor: ComputePipelineDescriptor) ComputePipeline {
-        return cdef.wgpuDeviceCreateComputePipeline(self, &descriptor);
-    }
-    pub fn createComputePipelineAsync(self: Device, descriptor: ComputePipelineDescriptor, callback: DeviceCreateComputePipelineAsyncCallback, userdata: ?*anyopaque) void {
-        return cdef.wgpuDeviceCreateComputePipelineAsync(self, &descriptor, callback, userdata);
-    }
-    pub fn createPipelineLayout(self: Device, descriptor: PipelineLayoutDescriptor) PipelineLayout {
-        return cdef.wgpuDeviceCreatePipelineLayout(self, &descriptor);
-    }
-    pub fn createQuerySet(self: Device, descriptor: QuerySetDescriptor) QuerySet {
-        return cdef.wgpuDeviceCreateQuerySet(self, &descriptor);
-    }
-    pub fn createRenderBundleEncoder(self: Device, descriptor: RenderBundleEncoderDescriptor) RenderBundleEncoder {
-        return cdef.wgpuDeviceCreateRenderBundleEncoder(self, &descriptor);
-    }
-    pub fn createRenderPipeline(self: Device, descriptor: RenderPipelineDescriptor) RenderPipeline {
-        return cdef.wgpuDeviceCreateRenderPipeline(self, &descriptor);
-    }
-    pub fn createRenderPipelineAsync(self: Device, descriptor: RenderPipelineDescriptor, callback: DeviceCreateRenderPipelineAsyncCallback, userdata: ?*anyopaque) void {
-        return cdef.wgpuDeviceCreateRenderPipelineAsync(self, &descriptor, callback, userdata);
-    }
-    pub fn createSampler(self: Device, descriptor: ?SamplerDescriptor) Sampler {
-        return cdef.wgpuDeviceCreateSampler(self, if (descriptor) |d| &d else null);
-    }
-    pub fn createShaderModule(self: Device, descriptor: ShaderModuleDescriptor) ShaderModule {
-        return cdef.wgpuDeviceCreateShaderModule(self, &descriptor);
-    }
-    pub fn createTexture(self: Device, descriptor: TextureDescriptor) Texture {
-        return cdef.wgpuDeviceCreateTexture(self, &descriptor);
-    }
-    pub fn destroy(self: Device) void {
-        cdef.wgpuDeviceDestroy(self);
-    }
-    pub fn enumerateFeatures(self: Device, alloc: Allocator) Allocator.Error![]FeatureName {
-        const count = cdef.wgpuDeviceEnumerateFeatures(self, null);
-        const features = try alloc.alloc(FeatureName, count);
-        _ = cdef.wgpuDeviceEnumerateFeatures(self, @ptrCast(features));
-        return features;
-    }
-    pub fn getLimits(self: Device) ?SupportedLimits {
-        var limits = SupportedLimits{};
-        if (cdef.wgpuDeviceGetLimits(self, &limits) == .true) {
-            return limits;
-        }
-        return null;
-    }
-    pub fn hasFeature(self: Device, feature: FeatureName) bool {
-        return cdef.wgpuDeviceHasFeature(self, feature) != .false;
-    }
-    pub const getQueue = cdef.wgpuDeviceGetQueue;
-    pub const popErrorScope = cdef.wgpuDevicePopErrorScope;
-    pub const pushErrorScope = cdef.wgpuDevicePushErrorScope;
-    pub const setLabel = cdef.wgpuDeviceSetLabel;
-    pub const reference = cdef.wgpuDeviceReference;
-    pub const release = cdef.wgpuDeviceRelease;
-    pub const getProcAddress = cdef.wgpuGetProcAddress;
+    pub const createBindGroup = wgpu.deviceCreateBindGroup;
+    pub const createBindGroupLayout = wgpu.deviceCreateBindGroupLayout;
+    pub const createBuffer = wgpu.deviceCreateBuffer;
+    pub const createCommandEncoder = wgpu.deviceCreateCommandEncoder;
+    pub const createComputePipeline = wgpu.deviceCreateComputePipeline;
+    pub const createComputePipelineAsync = wgpu.deviceCreateComputePipelineAsync;
+    pub const createPipelineLayout = wgpu.deviceCreatePipelineLayout;
+    pub const createQuerySet = wgpu.deviceCreateQuerySet;
+    pub const createRenderBundleEncoder = wgpu.deviceCreateRenderBundleEncoder;
+    pub const createRenderPipeline = wgpu.deviceCreateRenderPipeline;
+    pub const createRenderPipelineAsync = wgpu.deviceCreateRenderPipelineAsync;
+    pub const createSampler = wgpu.deviceCreateSampler;
+    pub const createShaderModule = wgpu.deviceCreateShaderModule;
+    pub const createTexture = wgpu.deviceCreateTexture;
+    pub const destroy = wgpu.deviceDestroy;
+    pub const enumerateFeatures = wgpu.deviceEnumerateFeatures;
+    pub const getLimits = wgpu.deviceGetLimits;
+    pub const getProcAddress = wgpu.getProcAddress;
+    pub const getQueue = wgpu.deviceGetQueue;
+    pub const hasFeature = wgpu.deviceHasFeature;
+    pub const popErrorScope = wgpu.devicePopErrorScope;
+    pub const pushErrorScope = wgpu.devicePushErrorScope;
+    pub const reference = wgpu.deviceReference;
+    pub const release = wgpu.deviceRelease;
+    pub const setLabel = wgpu.deviceSetLabel;
 
     // wgpu-native extras (wgpu.h)
-    pub fn wgpuDevicePoll(self: Device, wait: bool, wrappedSubmissionIndex: ?native.WrappedSubmissionIndex) bool {
-        return cdef.wgpuDevicePoll(self, if (wait) .true else .false, if (wrappedSubmissionIndex) |i| &i else null) == .true;
-    }
+    pub const poll = wgpu.devicePoll;
 };
 
 pub const Instance = *opaque {
-    pub fn createSurface(self: Instance, descriptor: SurfaceDescriptor) Surface {
-        return cdef.wgpuInstanceCreateSurface(self, &descriptor);
-    }
-    pub fn hasWGSLLanguageFeature(self: Instance, feature: WGSLFeatureName) bool {
-        return cdef.wgpuInstanceHasWGSLLanguageFeature(self, feature) == .true;
-    }
-    pub fn requestAdapterAsync(self: Instance, options: ?RequestAdapterOptions, callback: InstanceRequestAdapterCallback, userdata: ?*anyopaque) void {
-        cdef.wgpuInstanceRequestAdapter(self, if (options) |o| &o else null, callback, userdata);
-    }
+    pub const createSurface = wgpu.instanceCreateSurface;
+    pub const hasWGSLLanguageFeature = wgpu.instanceHasWGSLLanguageFeature;
+    pub const processEvents = wgpu.instanceProcessEvents;
+    pub const reference = wgpu.instanceReference;
+    pub const release = wgpu.instanceRelease;
     pub const requestAdapter = wgpu.instanceRequestAdapter;
-    pub const processEvents = cdef.wgpuInstanceProcessEvents;
-    pub const reference = cdef.wgpuInstanceReference;
-    pub const release = cdef.wgpuInstanceRelease;
+    pub const requestAdapterAsync = wgpu.instanceRequestAdapterAsync;
 
     // wgpu-native extras (wgpu.h)
-    pub fn generateReport(self: Instance) native.GlobalReport {
-        var report = native.GlobalReport{};
-        cdef.wgpuGenerateReport(self, &report);
-        return report;
-    }
-    pub fn enumerateAdapters(self: Instance, alloc: Allocator, options: ?native.InstanceEnumerateAdapterOptions) []Adapter {
-        const count = cdef.wgpuInstanceEnumerateAdapters(self, if (options) |o| &o else null, null);
-        const adapters = try alloc.alloc(Adapter, count);
-        _ = cdef.wgpuInstanceEnumerateAdapters(self, if (options) |o| &o else null, @ptrCast(adapters));
-        return adapters;
-    }
+    pub const generateReport = wgpu.generateReport;
+    pub const enumerateAdapters = wgpu.instanceEnumerateAdapters;
 };
 
 pub const PipelineLayout = *opaque {
-    pub const setLabel = cdef.wgpuPipelineLayoutSetLabel;
-    pub const reference = cdef.wgpuPipelineLayoutReference;
-    pub const release = cdef.wgpuPipelineLayoutRelease;
+    pub const reference = wgpu.pipelineLayoutReference;
+    pub const release = wgpu.pipelineLayoutRelease;
+    pub const setLabel = wgpu.pipelineLayoutSetLabel;
 };
 
 pub const QuerySet = *opaque {
-    pub const destroy = cdef.wgpuQuerySetDestroy;
-    pub const getCount = cdef.wgpuQuerySetGetCount;
-    pub const getType = cdef.wgpuQuerySetGetType;
-    pub const setLabel = cdef.wgpuQuerySetSetLabel;
-    pub const reference = cdef.wgpuQuerySetReference;
-    pub const release = cdef.wgpuQuerySetRelease;
+    pub const destroy = wgpu.querySetDestroy;
+    pub const getCount = wgpu.querySetGetCount;
+    pub const getType = wgpu.querySetGetType;
+    pub const reference = wgpu.querySetReference;
+    pub const release = wgpu.querySetRelease;
+    pub const setLabel = wgpu.querySetSetLabel;
 };
 
 pub const Queue = *opaque {
-    pub fn submit(self: Queue, commands: []const CommandBuffer) void {
-        cdef.wgpuQueueSubmit(self, commands.len, commands.ptr);
-    }
-    pub fn writeBuffer(self: Queue, buffer: Buffer, bufferOffset: u64, data: []const u8) void {
-        cdef.wgpuQueueWriteBuffer(self, buffer, bufferOffset, data.ptr, data.len);
-    }
-    pub fn writeTexture(self: Queue, destination: ImageCopyTexture, data: []const u8, dataLayout: TextureDataLayout, writeSize: Extent3D) void {
-        cdef.wgpuQueueWriteTexture(self, &destination, data.ptr, data.len, &dataLayout, &writeSize);
-    }
-    pub const onSubmittedWorkDone = cdef.wgpuQueueOnSubmittedWorkDone;
-    pub const setLabel = cdef.wgpuQueueSetLabel;
-    pub const reference = cdef.wgpuQueueReference;
-    pub const release = cdef.wgpuQueueRelease;
+    pub const onSubmittedWorkDone = wgpu.queueOnSubmittedWorkDone;
+    pub const reference = wgpu.queueReference;
+    pub const release = wgpu.queueRelease;
+    pub const setLabel = wgpu.queueSetLabel;
+    pub const submit = wgpu.queueSubmit;
+    pub const writeBuffer = wgpu.queueWriteBuffer;
+    pub const writeTexture = wgpu.queueWriteTexture;
 
     // wgpu-native extras (wgpu.h)
-    pub fn submitForIndex(self: Queue, commands: []const CommandBuffer) native.SubmissionIndex {
-        return cdef.wgpuQueueSubmitForIndex(self, commands.len, commands.ptr);
-    }
+    pub const submitForIndex = wgpu.queueSubmitForIndex;
 };
 
 pub const RenderBundle = *opaque {
-    pub const setLabel = cdef.wgpuRenderBundleSetLabel;
-    pub const reference = cdef.wgpuRenderBundleReference;
-    pub const release = cdef.wgpuRenderBundleRelease;
+    pub const reference = wgpu.renderBundleReference;
+    pub const release = wgpu.renderBundleRelease;
+    pub const setLabel = wgpu.renderBundleSetLabel;
 };
 
-pub const foo = cdef.wgpuRenderBundleEncoder;
 pub const RenderBundleEncoder = *opaque {
-    pub const draw = cdef.wgpuRenderBundleEncoderDraw;
-    pub const drawIndexed = cdef.wgpuRenderBundleEncoderDrawIndexed;
-    pub const drawIndexedIndirect = cdef.wgpuRenderBundleEncoderDrawIndexedIndirect;
-    pub const drawIndirect = cdef.wgpuRenderBundleEncoderDrawIndirect;
-    pub fn finish(self: RenderBundleEncoder, descriptor: ?RenderBundleDescriptor) RenderBundle {
-        return cdef.wgpuRenderBundleEncoderFinish(self, if (descriptor) |d| &d else null);
-    }
-    pub fn setBindGroup(self: RenderBundleEncoder, groupIndex: u32, group: ?BindGroup, dynamicOffsets: []const u32) void {
-        cdef.wgpuRenderBundleEncoderSetBindGroup(self, groupIndex, group, dynamicOffsets.len, dynamicOffsets.ptr);
-    }
-    pub const insertDebugMarker = cdef.wgpuRenderBundleEncoderInsertDebugMarker;
-    pub const popDebugGroup = cdef.wgpuRenderBundleEncoderPopDebugGroup;
-    pub const pushDebugGroup = cdef.wgpuRenderBundleEncoderPushDebugGroup;
-    pub const setIndexBuffer = cdef.wgpuRenderBundleEncoderSetIndexBuffer;
-    pub const setPipeline = cdef.wgpuRenderBundleEncoderSetPipeline;
-    pub const setVertexBuffer = cdef.wgpuRenderBundleEncoderSetVertexBuffer;
-    pub const setLabel = cdef.wgpuRenderBundleEncoderSetLabel;
-    pub const reference = cdef.wgpuRenderBundleEncoderReference;
-    pub const release = cdef.wgpuRenderBundleEncoderRelease;
+    pub const draw = wgpu.renderBundleEncoderDraw;
+    pub const drawIndexed = wgpu.renderBundleEncoderDrawIndexed;
+    pub const drawIndexedIndirect = wgpu.renderBundleEncoderDrawIndexedIndirect;
+    pub const drawIndirect = wgpu.renderBundleEncoderDrawIndirect;
+    pub const finish = wgpu.renderBundleEncoderFinish;
+    pub const insertDebugMarker = wgpu.renderBundleEncoderInsertDebugMarker;
+    pub const popDebugGroup = wgpu.renderBundleEncoderPopDebugGroup;
+    pub const pushDebugGroup = wgpu.renderBundleEncoderPushDebugGroup;
+    pub const reference = wgpu.renderBundleEncoderReference;
+    pub const release = wgpu.renderBundleEncoderRelease;
+    pub const setBindGroup = wgpu.renderBundleEncoderSetBindGroup;
+    pub const setIndexBuffer = wgpu.renderBundleEncoderSetIndexBuffer;
+    pub const setLabel = wgpu.renderBundleEncoderSetLabel;
+    pub const setPipeline = wgpu.renderBundleEncoderSetPipeline;
+    pub const setVertexBuffer = wgpu.renderBundleEncoderSetVertexBuffer;
 };
 
 pub const RenderPassEncoder = *opaque {
-    pub fn executeBundles(self: RenderPassEncoder, bundles: []const RenderBundle) void {
-        cdef.wgpuRenderPassEncoderExecuteBundles(self, bundles.len, bundles.ptr);
-    }
-    pub fn setBindGroup(self: RenderPassEncoder, groupIndex: u32, group: ?BindGroup, dynamicOffsets: []const u32) void {
-        cdef.wgpuRenderPassEncoderSetBindGroup(self, groupIndex, group, dynamicOffsets.len, dynamicOffsets.ptr);
-    }
-    pub fn setBlendConstant(self: RenderPassEncoder, color_: Color) void {
-        cdef.wgpuRenderPassEncoderSetBlendConstant(self, &color_);
-    }
-    pub const beginOcclusionQuery = cdef.wgpuRenderPassEncoderBeginOcclusionQuery;
-    pub const draw = cdef.wgpuRenderPassEncoderDraw;
-    pub const drawIndexed = cdef.wgpuRenderPassEncoderDrawIndexed;
-    pub const drawIndexedIndirect = cdef.wgpuRenderPassEncoderDrawIndexedIndirect;
-    pub const drawIndirect = cdef.wgpuRenderPassEncoderDrawIndirect;
-    pub const end = cdef.wgpuRenderPassEncoderEnd;
-    pub const endOcclusionQuery = cdef.wgpuRenderPassEncoderEndOcclusionQuery;
-    pub const insertDebugMarker = cdef.wgpuRenderPassEncoderInsertDebugMarker;
-    pub const popDebugGroup = cdef.wgpuRenderPassEncoderPopDebugGroup;
-    pub const pushDebugGroup = cdef.wgpuRenderPassEncoderPushDebugGroup;
-    pub const setIndexBuffer = cdef.wgpuRenderPassEncoderSetIndexBuffer;
-    pub const setPipeline = cdef.wgpuRenderPassEncoderSetPipeline;
-    pub const setScissorRect = cdef.wgpuRenderPassEncoderSetScissorRect;
-    pub const setStencilReference = cdef.wgpuRenderPassEncoderSetStencilReference;
-    pub const setVertexBuffer = cdef.wgpuRenderPassEncoderSetVertexBuffer;
-    pub const setViewport = cdef.wgpuRenderPassEncoderSetViewport;
-    pub const setLabel = cdef.wgpuRenderPassEncoderSetLabel;
-    pub const reference = cdef.wgpuRenderPassEncoderReference;
-    pub const release = cdef.wgpuRenderPassEncoderRelease;
+    pub const beginOcclusionQuery = wgpu.renderPassBeginOcclusionQuery;
+    pub const draw = wgpu.renderPassDraw;
+    pub const drawIndexed = wgpu.renderPassDrawIndexed;
+    pub const drawIndexedIndirect = wgpu.renderPassDrawIndexedIndirect;
+    pub const drawIndirect = wgpu.renderPassDrawIndirect;
+    pub const end = wgpu.renderPassEnd;
+    pub const endOcclusionQuery = wgpu.renderPassEndOcclusionQuery;
+    pub const executeBundles = wgpu.renderPassExecuteBundles;
+    pub const insertDebugMarker = wgpu.renderPassInsertDebugMarker;
+    pub const popDebugGroup = wgpu.renderPassPopDebugGroup;
+    pub const pushDebugGroup = wgpu.renderPassPushDebugGroup;
+    pub const reference = wgpu.renderPassReference;
+    pub const release = wgpu.renderPassRelease;
+    pub const setBindGroup = wgpu.renderPassSetBindGroup;
+    pub const setBlendConstant = wgpu.renderPassSetBlendConstant;
+    pub const setIndexBuffer = wgpu.renderPassSetIndexBuffer;
+    pub const setLabel = wgpu.renderPassSetLabel;
+    pub const setPipeline = wgpu.renderPassSetPipeline;
+    pub const setScissorRect = wgpu.renderPassSetScissorRect;
+    pub const setStencilReference = wgpu.renderPassSetStencilReference;
+    pub const setVertexBuffer = wgpu.renderPassSetVertexBuffer;
+    pub const setViewport = wgpu.renderPassSetViewport;
 
     // wgpu-native extras (wgpu.h)
-    pub fn setPushConstants(self: RenderPassEncoder, stages: ShaderStageFlags, offset: u32, data: []const u8) void {
-        cdef.wgpuRenderPassEncoderSetPushConstants(self, stages, offset, @intCast(data.len), data.ptr);
-    }
-    pub const multiDrawIndirect = cdef.wgpuRenderPassEncoderMultiDrawIndirectCount;
-    pub const multiDrawIndexedIndirect = cdef.wgpuRenderPassEncoderMultiDrawIndexedIndirectCount;
-    pub const multiDrawIndirectCount = cdef.wgpuRenderPassEncoderMultiDrawIndirectCount;
-    pub const multiDrawIndexedIndirectCount = cdef.wgpuRenderPassEncoderMultiDrawIndexedIndirectCount;
     pub const beginPipelineStatisticsQuery = cdef.wgpuRenderPassEncoderBeginPipelineStatisticsQuery;
     pub const endPipelineStatisticsQuery = cdef.wgpuRenderPassEncoderEndPipelineStatisticsQuery;
+    pub const multiDrawIndexedIndirect = cdef.wgpuRenderPassEncoderMultiDrawIndexedIndirectCount;
+    pub const multiDrawIndexedIndirectCount = cdef.wgpuRenderPassEncoderMultiDrawIndexedIndirectCount;
+    pub const multiDrawIndirect = cdef.wgpuRenderPassEncoderMultiDrawIndirectCount;
+    pub const multiDrawIndirectCount = cdef.wgpuRenderPassEncoderMultiDrawIndirectCount;
+    pub const setPushConstants = wgpu.renderPassSetPushConstants;
 };
 
 pub const RenderPipeline = *opaque {
-    pub const getBindGroupLayout = cdef.wgpuRenderPipelineGetBindGroupLayout;
-    pub const setLabel = cdef.wgpuRenderPipelineSetLabel;
-    pub const reference = cdef.wgpuRenderPipelineReference;
-    pub const release = cdef.wgpuRenderPipelineRelease;
+    pub const getBindGroupLayout = wgpu.renderPipelineGetBindGroupLayout;
+    pub const reference = wgpu.renderPipelineReference;
+    pub const release = wgpu.renderPipelineRelease;
+    pub const setLabel = wgpu.renderPipelineSetLabel;
 };
 
 pub const Sampler = *opaque {
-    pub const setLabel = cdef.wgpuSamplerSetLabel;
-    pub const reference = cdef.wgpuSamplerReference;
-    pub const release = cdef.wgpuSamplerRelease;
+    pub const reference = wgpu.samplerReference;
+    pub const release = wgpu.samplerRelease;
+    pub const setLabel = wgpu.samplerSetLabel;
 };
 
 pub const ShaderModule = *opaque {
-    pub const getCompilationInfo = cdef.wgpuShaderModuleGetCompilationInfo;
-    pub const setLabel = cdef.wgpuShaderModuleSetLabel;
-    pub const reference = cdef.wgpuShaderModuleReference;
-    pub const release = cdef.wgpuShaderModuleRelease;
+    pub const getCompilationInfo = wgpu.shaderModuleGetCompilationInfo;
+    pub const reference = wgpu.shaderModuleReference;
+    pub const release = wgpu.shaderModuleRelease;
+    pub const setLabel = wgpu.shaderModuleSetLabel;
 };
 
 pub const Surface = *opaque {
-    pub fn configure(self: Surface, config: SurfaceConfiguration) void {
-        cdef.wgpuSurfaceConfigure(self, &config);
-    }
-    pub fn getCapabilities(self: Surface, adapter: Adapter) SurfaceCapabilities {
-        var capabilities = SurfaceCapabilities{};
-        cdef.wgpuSurfaceGetCapabilities(self, adapter, &capabilities);
-        return capabilities;
-    }
-    pub fn getCurrentTexture(self: Surface) SurfaceTexture {
-        var texture = SurfaceTexture{};
-        cdef.wgpuSurfaceGetCurrentTexture(self, &texture);
-        return texture;
-    }
-    pub const present = cdef.wgpuSurfacePresent;
-    pub const unconfigure = cdef.wgpuSurfaceUnconfigure;
-    pub const setLabel = cdef.wgpuSurfaceSetLabel;
-    pub const reference = cdef.wgpuSurfaceReference;
-    pub const release = cdef.wgpuSurfaceRelease;
+    pub const configure = wgpu.surfaceConfigure;
+    pub const getCapabilities = wgpu.surfaceGetCapabilities;
+    pub const getCurrentTexture = wgpu.surfaceGetCurrentTexture;
+    pub const present = wgpu.surfacePresent;
+    pub const reference = wgpu.surfaceReference;
+    pub const release = wgpu.surfaceRelease;
+    pub const setLabel = wgpu.surfaceSetLabel;
+    pub const unconfigure = wgpu.surfaceUnconfigure;
 };
 
 pub const Texture = *opaque {
-    pub fn createView(self: Texture, descriptor: ?TextureViewDescriptor) TextureView {
-        return cdef.wgpuTextureCreateView(self, if (descriptor) |d| &d else null);
-    }
-    pub const destroy = cdef.wgpuTextureDestroy;
-    pub const getDepthOrArrayLayers = cdef.wgpuTextureGetDepthOrArrayLayers;
-    pub const getDimension = cdef.wgpuTextureGetDimension;
-    pub const getFormat = cdef.wgpuTextureGetFormat;
-    pub const getHeight = cdef.wgpuTextureGetHeight;
-    pub const getMipLevelCount = cdef.wgpuTextureGetMipLevelCount;
-    pub const getSampleCount = cdef.wgpuTextureGetSampleCount;
-    pub const getUsage = cdef.wgpuTextureGetUsage;
-    pub const getWidth = cdef.wgpuTextureGetWidth;
-    pub const setLabel = cdef.wgpuTextureSetLabel;
-    pub const reference = cdef.wgpuTextureReference;
-    pub const release = cdef.wgpuTextureRelease;
+    pub const createView = wgpu.textureCreateView;
+    pub const destroy = wgpu.textureDestroy;
+    pub const getDepthOrArrayLayers = wgpu.textureGetDepthOrArrayLayers;
+    pub const getDimension = wgpu.textureGetDimension;
+    pub const getFormat = wgpu.textureGetFormat;
+    pub const getHeight = wgpu.textureGetHeight;
+    pub const getMipLevelCount = wgpu.textureGetMipLevelCount;
+    pub const getSampleCount = wgpu.textureGetSampleCount;
+    pub const getUsage = wgpu.textureGetUsage;
+    pub const getWidth = wgpu.textureGetWidth;
+    pub const reference = wgpu.textureReference;
+    pub const release = wgpu.textureRelease;
+    pub const setLabel = wgpu.textureSetLabel;
 };
 
 pub const TextureView = *opaque {
-    pub const setLabel = cdef.wgpuTextureViewSetLabel;
-    pub const reference = cdef.wgpuTextureViewReference;
-    pub const release = cdef.wgpuTextureViewRelease;
+    pub const reference = wgpu.textureViewReference;
+    pub const release = wgpu.textureViewRelease;
+    pub const setLabel = wgpu.textureViewSetLabel;
 };
 
-pub const native = struct {
-    pub const LogLevel = enum(u32) {
-        off = 0,
-        @"error",
-        warn,
-        info,
-        debug,
-        trace,
+// ==== wgpu-native extras (wgpu.h) ================================================================
+pub const LogLevel = enum(u32) {
+    off = 0,
+    @"error",
+    warn,
+    info,
+    debug,
+    trace,
+};
+
+pub const Dx12Compiler = enum(u32) {
+    undefined = 0,
+    fxc,
+    dxc,
+};
+
+pub const Gles3MinorVersion = enum(u32) {
+    automatic = 0,
+    version0,
+    version1,
+    version2,
+};
+
+pub const PipelineStatisticName = enum(u32) {
+    vertex_shader_invocations = 0,
+    clipper_invocations,
+    clipper_primitives_out,
+    fragment_shader_invocations,
+    compute_shader_invocations,
+};
+
+pub const SubmissionIndex = u64;
+pub const LogCallback = ?*const fn (level: LogLevel, message: [*:0]const u8, userdata: ?*anyopaque) callconv(.C) void;
+
+pub const InstanceBackendFlags = packed struct(u32) {
+    pub const all = InstanceBackendFlags{};
+    pub const primary = InstanceBackendFlags{ .vulkan = true, .metal = true, .dx12 = true };
+    pub const secondary = InstanceBackendFlags{ .gl = true, .dx11 = true };
+
+    vulkan: bool = false,
+    gl: bool = false,
+    metal: bool = false,
+    dx12: bool = false,
+    dx11: bool = false,
+    browser_webgpu: bool = false,
+    _padding: u26 = 0,
+};
+
+pub const InstanceFlags = packed struct(u32) {
+    pub const default = InstanceFlags{};
+
+    debug: bool = false,
+    validation: bool = false,
+    discard_hal_labels: bool = false,
+    _padding: u29 = 0,
+};
+
+pub const InstanceExtras = extern struct {
+    chain: ChainedStruct = .{ .s_type = .instance_extras },
+    backends: InstanceBackendFlags,
+    flags: InstanceFlags,
+    dx12_shader_compiler: Dx12Compiler,
+    gles3_minor_version: Gles3MinorVersion,
+    dxil_path: [*:0]const u8,
+    dxc_path: [*:0]const u8,
+};
+
+pub const DeviceExtras = extern struct {
+    chain: ChainedStruct = .{ .s_type = .device_extras },
+    trace_path: [*:0]const u8,
+};
+
+pub const NativeLimits = extern struct {
+    max_push_constant_size: u32 = 0,
+    max_non_sampler_bindings: u32 = 0,
+};
+
+pub const RequiredLimitsExtras = extern struct {
+    chain: ChainedStruct = .{ .s_type = .required_limits_extras },
+    limits: NativeLimits = .{},
+};
+
+pub const SupportedLimitsExtras = extern struct {
+    chain: ChainedStructOut = .{ .s_type = .supported_limits_extras },
+    limits: NativeLimits = .{},
+};
+
+pub const PushConstantRange = extern struct {
+    stages: ShaderStageFlags = ShaderStageFlags.none,
+    start: u32 = 0,
+    end: u32 = 0,
+};
+
+pub const PipelineLayoutExtras = extern struct {
+    chain: ChainedStruct = .{ .s_type = .pipeline_layout_extras },
+    push_constant_range_count: usize = 0,
+    push_constant_ranges: [*]const PushConstantRange = undefined,
+};
+
+pub const WrappedSubmissionIndex = extern struct {
+    queue: Queue,
+    submission_index: SubmissionIndex,
+};
+
+pub const ShaderDefine = extern struct {
+    name: [*:0]const u8,
+    value: [*:0]const u8,
+};
+
+pub const ShaderModuleGLSLDescriptor = extern struct {
+    chain: ChainedStruct = .{ .s_type = .shader_module_glsl_descriptor },
+    stage: ShaderStageFlags,
+    code: [*:0]const u8,
+    define_count: u32 = 0,
+    defines: [*]ShaderDefine = undefined,
+};
+
+pub const MergedShaderModuleGLSLDescriptor = struct {
+    label: ?[*:0]const u8 = null,
+    hints: []ShaderModuleCompilationHint = .{},
+    stage: ShaderStageFlags,
+    code: [*:0]const u8,
+    defines: []ShaderDefine = .{},
+};
+
+pub inline fn shaderModuleGLSLDescriptor(descriptor: MergedShaderModuleGLSLDescriptor) ShaderModuleDescriptor {
+    return ShaderModuleDescriptor{
+        .next_in_chain = @ptrCast(&ShaderModuleGLSLDescriptor{
+            .stage = descriptor.stage,
+            .code = descriptor.code,
+            .define_count = @intCast(descriptor.defines.len),
+            .defines = descriptor.defines.ptr,
+        }),
+        .label = descriptor.label,
+        .hint_count = descriptor.hints.len,
+        .hints = descriptor.hints.ptr,
     };
+}
 
-    pub const Dx12Compiler = enum(u32) {
-        undefined = 0,
-        fxc,
-        dxc,
-    };
+pub const RegistryReport = extern struct {
+    num_allocated: usize = 0,
+    num_kept_from_user: usize = 0,
+    num_released_from_user: usize = 0,
+    num_error: usize = 0,
+    element_size: usize = 0,
+};
 
-    pub const Gles3MinorVersion = enum(u32) {
-        automatic = 0,
-        version0,
-        version1,
-        version2,
-    };
+pub const HubReport = extern struct {
+    adapters: RegistryReport = .{},
+    devices: RegistryReport = .{},
+    queues: RegistryReport = .{},
+    pipeline_layouts: RegistryReport = .{},
+    shader_modules: RegistryReport = .{},
+    bind_group_layouts: RegistryReport = .{},
+    bind_groups: RegistryReport = .{},
+    command_buffers: RegistryReport = .{},
+    render_bundles: RegistryReport = .{},
+    render_pipelines: RegistryReport = .{},
+    compute_pipelines: RegistryReport = .{},
+    query_sets: RegistryReport = .{},
+    buffers: RegistryReport = .{},
+    textures: RegistryReport = .{},
+    texture_views: RegistryReport = .{},
+    samplers: RegistryReport = .{},
+};
 
-    pub const PipelineStatisticName = enum(u32) {
-        vertex_shader_invocations = 0,
-        clipper_invocations,
-        clipper_primitives_out,
-        fragment_shader_invocations,
-        compute_shader_invocations,
-    };
+pub const GlobalReport = extern struct {
+    surfaces: RegistryReport = .{},
+    backend_type: BackendType = .undefined,
+    vulkan: HubReport = .{},
+    metal: HubReport = .{},
+    dx12: HubReport = .{},
+    gl: HubReport = .{},
+};
 
-    pub const InstanceBackendFlags = packed struct(u32) {
-        pub const all = InstanceBackendFlags{};
-        pub const primary = InstanceBackendFlags{ .vulkan = true, .metal = true, .dx12 = true };
-        pub const secondary = InstanceBackendFlags{ .gl = true, .dx11 = true };
+pub const InstanceEnumerateAdapterOptions = extern struct {
+    next_in_chain: ?*const ChainedStruct = null,
+    backends: InstanceBackendFlags = InstanceBackendFlags.all,
+};
 
-        vulkan: bool = false,
-        gl: bool = false,
-        metal: bool = false,
-        dx12: bool = false,
-        dx11: bool = false,
-        browser_webgpu: bool = false,
-        _padding: u26 = 0,
-    };
+pub const BindGroupEntryExtras = extern struct {
+    chain: ChainedStruct = .{ .s_type = .bind_group_entry_extras },
+    buffers: [*]const Buffer = undefined,
+    buffer_count: usize = 0,
+    samplers: [*]const Sampler = undefined,
+    sampler_count: usize = 0,
+    texture_views: [*]const TextureView = undefined,
+    texture_view_count: usize = 0,
+};
 
-    pub const InstanceFlags = packed struct(u32) {
-        pub const default = InstanceFlags{};
+pub const BindGroupLayoutEntryExtras = extern struct {
+    chain: ChainedStruct = .{ .s_type = .bind_group_layout_entry_extras },
+    count: u32,
+};
 
-        debug: bool = false,
-        validation: bool = false,
-        discard_hal_labels: bool = false,
-        _padding: u29 = 0,
-    };
+pub const QuerySetDescriptorExtras = extern struct {
+    chain: ChainedStruct = .{ .s_type = .query_set_descriptor_extras },
+    pipeline_statistics: [*]const PipelineStatisticName,
+    pipeline_statistic_count: usize,
+};
 
-    pub const InstanceExtras = extern struct {
-        chain: ChainedStruct = .{ .s_type = .instance_extras },
-        backends: InstanceBackendFlags,
-        flags: InstanceFlags,
-        dx12_shader_compiler: Dx12Compiler,
-        gles3_minor_version: Gles3MinorVersion,
-        dxil_path: [*:0]const u8,
-        dxc_path: [*:0]const u8,
-    };
-
-    pub const DeviceExtras = extern struct {
-        chain: ChainedStruct = .{ .s_type = .device_extras },
-        trace_path: [*:0]const u8,
-    };
-
-    pub const NativeLimits = extern struct {
-        max_push_constant_size: u32 = 0,
-        max_non_sampler_bindings: u32 = 0,
-    };
-
-    pub const RequiredLimitsExtras = extern struct {
-        chain: ChainedStruct = .{ .s_type = .required_limits_extras },
-        limits: NativeLimits = .{},
-    };
-
-    pub const SupportedLimitsExtras = extern struct {
-        chain: ChainedStructOut = .{ .s_type = .supported_limits_extras },
-        limits: NativeLimits = .{},
-    };
-
-    pub const PushConstantRange = extern struct {
-        stages: ShaderStageFlags = ShaderStageFlags.none,
-        start: u32 = 0,
-        end: u32 = 0,
-    };
-
-    pub const PipelineLayoutExtras = extern struct {
-        chain: ChainedStruct = .{ .s_type = .pipeline_layout_extras },
-        push_constant_range_count: usize = 0,
-        push_constant_ranges: [*]const PushConstantRange = undefined,
-    };
-
-    pub const WrappedSubmissionIndex = extern struct {
-        queue: Queue,
-        submission_index: SubmissionIndex,
-    };
-
-    pub const ShaderDefine = extern struct {
-        name: [*:0]const u8,
-        value: [*:0]const u8,
-    };
-
-    pub const ShaderModuleGLSLDescriptor = extern struct {
-        chain: ChainedStruct = .{ .s_type = .shader_module_glsl_descriptor },
-        stage: ShaderStageFlags,
-        code: [*:0]const u8,
-        define_count: u32 = 0,
-        defines: [*]ShaderDefine = undefined,
-    };
-
-    pub const MergedShaderModuleGLSLDescriptor = struct {
-        label: ?[*:0]const u8 = null,
-        hints: []ShaderModuleCompilationHint = .{},
-        stage: ShaderStageFlags,
-        code: [*:0]const u8,
-        defines: []ShaderDefine = .{},
-    };
-
-    pub inline fn shaderModuleGLSLDescriptor(descriptor: MergedShaderModuleGLSLDescriptor) ShaderModuleDescriptor {
-        return ShaderModuleDescriptor{
-            .next_in_chain = @ptrCast(&ShaderModuleGLSLDescriptor{
-                .stage = descriptor.stage,
-                .code = descriptor.code,
-                .define_count = @intCast(descriptor.defines.len),
-                .defines = descriptor.defines.ptr,
-            }),
-            .label = descriptor.label,
-            .hint_count = descriptor.hints.len,
-            .hints = descriptor.hints.ptr,
-        };
-    }
-
-    pub const RegistryReport = extern struct {
-        num_allocated: usize = 0,
-        num_kept_from_user: usize = 0,
-        num_released_from_user: usize = 0,
-        num_error: usize = 0,
-        element_size: usize = 0,
-    };
-
-    pub const HubReport = extern struct {
-        adapters: RegistryReport = .{},
-        devices: RegistryReport = .{},
-        queues: RegistryReport = .{},
-        pipeline_layouts: RegistryReport = .{},
-        shader_modules: RegistryReport = .{},
-        bind_group_layouts: RegistryReport = .{},
-        bind_groups: RegistryReport = .{},
-        command_buffers: RegistryReport = .{},
-        render_bundles: RegistryReport = .{},
-        render_pipelines: RegistryReport = .{},
-        compute_pipelines: RegistryReport = .{},
-        query_sets: RegistryReport = .{},
-        buffers: RegistryReport = .{},
-        textures: RegistryReport = .{},
-        texture_views: RegistryReport = .{},
-        samplers: RegistryReport = .{},
-    };
-
-    pub const GlobalReport = extern struct {
-        surfaces: RegistryReport = .{},
-        backend_type: BackendType = .undefined,
-        vulkan: HubReport = .{},
-        metal: HubReport = .{},
-        dx12: HubReport = .{},
-        gl: HubReport = .{},
-    };
-
-    pub const InstanceEnumerateAdapterOptions = extern struct {
-        next_in_chain: ?*const ChainedStruct = null,
-        backends: InstanceBackendFlags = InstanceBackendFlags.all,
-    };
-
-    pub const BindGroupEntryExtras = extern struct {
-        chain: ChainedStruct = .{ .s_type = .bind_group_entry_extras },
-        buffers: [*]const Buffer = undefined,
-        buffer_count: usize = 0,
-        samplers: [*]const Sampler = undefined,
-        sampler_count: usize = 0,
-        texture_views: [*]const TextureView = undefined,
-        texture_view_count: usize = 0,
-    };
-
-    pub const BindGroupLayoutEntryExtras = extern struct {
-        chain: ChainedStruct = .{ .s_type = .bind_group_layout_entry_extras },
-        count: u32,
-    };
-
-    pub const QuerySetDescriptorExtras = extern struct {
-        chain: ChainedStruct = .{ .s_type = .query_set_descriptor_extras },
-        pipeline_statistics: [*]const PipelineStatisticName,
-        pipeline_statistic_count: usize,
-    };
-
-    pub const SurfaceConfigurationExtras = extern struct {
-        chain: ChainedStruct = .{ .s_type = .surface_configuration_extras },
-        desired_maximum_frame_latency: u32,
-    };
-
-    pub const SubmissionIndex = u64;
-    pub const LogCallback = ?*const fn (level: LogLevel, message: [*:0]const u8, userdata: ?*anyopaque) callconv(.C) void;
-
-    pub const setLogCallback = cdef.wgpuSetLogCallback;
-    pub const setLogLevel = cdef.wgpuSetLogLevel;
-    pub const getVersion = cdef.wgpuGetVersion;
+pub const SurfaceConfigurationExtras = extern struct {
+    chain: ChainedStruct = .{ .s_type = .surface_configuration_extras },
+    desired_maximum_frame_latency: u32,
 };
