@@ -831,8 +831,8 @@ pub const Limits = extern struct {
 pub const MultisampleState = extern struct {
     next_in_chain: ?*const ChainedStruct = null,
     count: u32,
-    mask: u32,
-    alpha_to_coverage_enabled: Bool,
+    mask: u32 = 0xffffffff,
+    alpha_to_coverage_enabled: Bool = .false,
 };
 
 pub const Origin3D = extern struct {
@@ -855,10 +855,10 @@ pub const PrimitiveDepthClipControl = extern struct {
 
 pub const PrimitiveState = extern struct {
     next_in_chain: ?*const ChainedStruct = null,
-    topology: PrimitiveTopology,
-    strip_index_format: IndexFormat,
-    front_face: FrontFace,
-    cull_mode: CullMode,
+    topology: PrimitiveTopology = .triangle_list,
+    strip_index_format: IndexFormat = .undefined,
+    front_face: FrontFace = .ccw,
+    cull_mode: CullMode = .back,
 };
 
 pub const QuerySetDescriptor = extern struct {
@@ -966,8 +966,8 @@ pub const ShaderModuleSPIRVDescriptor = extern struct {
 
 pub const MergedShaderModuleSPIRVDescriptor = struct {
     label: ?[*:0]const u8 = null,
-    hints: []const ShaderModuleCompilationHint = .{},
-    code: []const u32 = .{},
+    hints: []const ShaderModuleCompilationHint = &.{},
+    code: []const u32 = &.{},
 };
 
 pub inline fn shaderModuleSPIRVDescriptor(descriptor: MergedShaderModuleSPIRVDescriptor) ShaderModuleDescriptor {
@@ -989,7 +989,7 @@ pub const ShaderModuleWGSLDescriptor = extern struct {
 
 pub const MergedShaderModuleWGSLDescriptor = struct {
     label: ?[*:0]const u8 = null,
-    hints: []const ShaderModuleCompilationHint = .{},
+    hints: []const ShaderModuleCompilationHint = &.{},
     code: [*:0]const u8,
 };
 
@@ -1387,9 +1387,9 @@ pub const BindGroupLayoutDescriptor = extern struct {
 
 pub const ColorTargetState = extern struct {
     next_in_chain: ?*const ChainedStruct = null,
-    format: TextureFormat,
+    format: TextureFormat = .undefined,
     blend: ?*const BlendState = null,
-    write_mask: ColorWriteMaskFlags,
+    write_mask: ColorWriteMaskFlags = ColorWriteMaskFlags.all,
 };
 
 pub const ComputePipelineDescriptor = extern struct {
@@ -2479,10 +2479,10 @@ pub const ShaderModuleGLSLDescriptor = extern struct {
 
 pub const MergedShaderModuleGLSLDescriptor = struct {
     label: ?[*:0]const u8 = null,
-    hints: []ShaderModuleCompilationHint = .{},
+    hints: []ShaderModuleCompilationHint = &.{},
     stage: ShaderStageFlags,
     code: [*:0]const u8,
-    defines: []ShaderDefine = .{},
+    defines: []ShaderDefine = &.{},
 };
 
 pub inline fn shaderModuleGLSLDescriptor(descriptor: MergedShaderModuleGLSLDescriptor) ShaderModuleDescriptor {
